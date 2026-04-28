@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from typing import Dict, List, Tuple
 
-from .models import FlightIntention, Lane, Waypoint
+from .models import ApprovedPlan, FlightIntention, Lane, Waypoint
 
 
 def segment_travel_times(v_waypoints: List[float], segments_lengths: List[float]) -> List[float]:
@@ -54,6 +54,26 @@ def common_waypoints(lane_a: Lane, lane_b: Lane) -> List[Tuple[int, int]]:
     for i, w in enumerate(lane_a.waypoints):
         if w.id in ids_b:
             result.append((i, ids_b[w.id]))
+    return result
+
+
+def plan_waypoint_times_dict(plan: ApprovedPlan) -> Dict[str, float]:
+    """Return {waypoint_id: arrival_time} for an approved plan.
+
+    Uses pre-computed waypoint_times if available; otherwise derives them
+    from plan.t_dep and plan.v_waypoints (lazy computation path).
+    """
+    if plan.waypoint_times:
+        return {w.id: t for w, t in plan.waypoint_times}
+    if plan.t_dep is None:
+        return {}
+    result: Dict[str, float] = {}
+    cumulative = plan.t_dep
+    for i, wp in enumerate(plan.lane.waypoints):
+        result[wp.id] = cumulative
+        if i < len(plan.lane.segments):
+            v = plan.v_waypoints[i] if i < len(plan.v_waypoints) else plan.lane.segments[i].v_min
+            cumulative += plan.lane.segments[i].length / v
     return result
 
 
