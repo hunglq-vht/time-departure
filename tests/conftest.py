@@ -43,6 +43,7 @@ def make_fi(
     P_hover: float = 500.0,
     drone_id: str = "drone_new",
     uav_type: str = "A",
+    operator_id: str = "op1",
 ) -> FlightIntention:
     v_waypoints = [v] * len(lane.waypoints)
     return FlightIntention(
@@ -55,7 +56,7 @@ def make_fi(
         C_bat=C_bat,
         P_hover=P_hover,
         priority=1,
-        operator_id="op1",
+        operator_id=operator_id,
     )
 
 
