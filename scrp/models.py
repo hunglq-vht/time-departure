@@ -59,10 +59,12 @@ class ApprovedPlan:
     uav_type: str
     lane: Lane
     waypoint_times: List[Tuple[Waypoint, float]]  # [(waypoint, abs_time), ...]
+    v_waypoints: List[float]                       # velocity entering each segment; len == len(lane.waypoints)
     t_land: float
     pad_id: str
     slot_index: int
     status: str   # 'SOFT_RESERVED' | 'COMMITTED'
+    algorithm: str = 'SCRP'                        # algorithm that produced this plan
     expires_at: Optional[float] = None
 
 

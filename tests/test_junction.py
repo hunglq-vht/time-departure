@@ -16,10 +16,12 @@ def make_plan_with_junction(lane, junction_wp, t_junction: float, drone_id: str 
         uav_type="A",
         lane=lane,
         waypoint_times=wt,
+        v_waypoints=[10.0] * len(lane.waypoints),
         t_land=t_junction + 10.0,
         pad_id="pad1",
         slot_index=1,
         status="COMMITTED",
+        algorithm='SCRP',
     )
 
 
@@ -77,10 +79,12 @@ class TestDeltaC2:
             uav_type="A",
             lane=lane_existing,
             waypoint_times=wt,
+            v_waypoints=[10.0] * len(lane_existing.waypoints),
             t_land=1015.0,
             pad_id="pad1",
             slot_index=1,
             status="COMMITTED",
+            algorithm='SCRP',
         )
 
         state = make_system_state()
@@ -112,10 +116,12 @@ class TestDeltaC2:
             uav_type="A",
             lane=lane_existing,
             waypoint_times=wt,
+            v_waypoints=[10.0] * len(lane_existing.waypoints),
             t_land=1110.0,
             pad_id="pad1",
             slot_index=2,
             status="COMMITTED",
+            algorithm='SCRP',
         )
 
         state = make_system_state()

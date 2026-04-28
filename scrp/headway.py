@@ -64,15 +64,18 @@ def compute_delta_C1(
             seg = fi.lane.segments[idx_new]
             v_i = fi.v_waypoints[idx_new]
 
-            # ApprovedPlan stores no v_waypoints — derive from consecutive waypoint_times.
-            # Fall back to segment v_min only if next waypoint time is unavailable.
-            plan_seg = plan.lane.segments[idx_plan]
-            t_next_wp_id = plan.lane.waypoints[idx_plan + 1].id
-            t_next = plan_times.get(t_next_wp_id)
-            if t_next is not None and t_next > tau_k:
-                v_j = plan_seg.length / (t_next - tau_k)
+            # Use stored velocity from ApprovedPlan when available; fall back to
+            # deriving from consecutive waypoint_times for legacy plans without v_waypoints.
+            if plan.v_waypoints and idx_plan < len(plan.v_waypoints):
+                v_j = plan.v_waypoints[idx_plan]
             else:
-                v_j = plan_seg.v_min
+                plan_seg = plan.lane.segments[idx_plan]
+                t_next_wp_id = plan.lane.waypoints[idx_plan + 1].id
+                t_next = plan_times.get(t_next_wp_id)
+                if t_next is not None and t_next > tau_k:
+                    v_j = plan_seg.length / (t_next - tau_k)
+                else:
+                    v_j = plan_seg.v_min
 
             msd = state.msd_matrix.get((fi.uav_type, plan.uav_type), 50.0)
             body_j = state.body_length.get(plan.uav_type, 1.0)

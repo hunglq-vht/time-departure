@@ -21,10 +21,12 @@ def make_plan_on_lane(lane, t_start: float, v: float = 10.0, drone_id: str = "d_
         uav_type="A",
         lane=lane,
         waypoint_times=waypoint_times,
+        v_waypoints=[v] * len(lane.waypoints),
         t_land=cumulative,
         pad_id="pad1",
         slot_index=0,
         status="COMMITTED",
+        algorithm='SCRP',
     )
 
 

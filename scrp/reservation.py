@@ -12,8 +12,10 @@ def create_soft_reservation(
     fi_lane: Lane,
     fi_drone_id: str,
     fi_uav_type: str,
+    fi_v_waypoints: List[float],
     state: SystemState,
     t_response_window: float,
+    algorithm: str = 'SCRP',
 ) -> SystemState:
     """Create a SOFT_RESERVED plan and mark the slot. Returns mutated state copy."""
     new_state = copy.deepcopy(state)
@@ -29,10 +31,12 @@ def create_soft_reservation(
         uav_type=fi_uav_type,
         lane=fi_lane,
         waypoint_times=waypoint_times,
+        v_waypoints=list(fi_v_waypoints),
         t_land=result.t_land_assigned,
         pad_id=result.pad_id,
         slot_index=result.slot_index,
         status='SOFT_RESERVED',
+        algorithm=algorithm,
         expires_at=result.expires_at,
     )
     new_state.approved_plans.append(plan)
