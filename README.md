@@ -1,8 +1,6 @@
 # time-departure
 
 # Strategic Conflict Resolution Problem (SCRP)
-## Đặc tả kỹ thuật cho Claude Code — Python Implementation
-
 ---
 
 ## 1. Tổng quan
