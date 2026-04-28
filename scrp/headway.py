@@ -63,16 +63,16 @@ def compute_delta_C1(
 
             seg = fi.lane.segments[idx_new]
             v_i = fi.v_waypoints[idx_new]
-            v_j = plan.lane.segments[idx_plan].v_min  # worst-case: plan drone at min speed
 
-            # Use actual plan drone velocity if we can infer it from waypoint times
+            # ApprovedPlan stores no v_waypoints — derive from consecutive waypoint_times.
+            # Fall back to segment v_min only if next waypoint time is unavailable.
             plan_seg = plan.lane.segments[idx_plan]
             t_next_wp_id = plan.lane.waypoints[idx_plan + 1].id
             t_next = plan_times.get(t_next_wp_id)
-            if t_next is not None:
-                travel = t_next - tau_k
-                if travel > 0:
-                    v_j = plan_seg.length / travel
+            if t_next is not None and t_next > tau_k:
+                v_j = plan_seg.length / (t_next - tau_k)
+            else:
+                v_j = plan_seg.v_min
 
             msd = state.msd_matrix.get((fi.uav_type, plan.uav_type), 50.0)
             body_j = state.body_length.get(plan.uav_type, 1.0)
