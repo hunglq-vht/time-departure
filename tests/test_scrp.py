@@ -30,10 +30,12 @@ def _committed_plan(lane, t_start: float, v: float = 10.0, drone_id: str = "d_ex
         uav_type="A",
         lane=lane,
         waypoint_times=wt,
+        v_waypoints=[v] * len(lane.waypoints),
         t_land=cumulative,
         pad_id="pad1",
         slot_index=0,
         status=status,
+        algorithm='SCRP',
     )
 
 
@@ -113,8 +115,9 @@ class TestJunctionConflict:
         ]
         existing = ApprovedPlan(
             drone_id="d2", uav_type="A", lane=lane_ex,
-            waypoint_times=wt, t_land=1015.0, pad_id="pad1",
-            slot_index=1, status="COMMITTED",
+            waypoint_times=wt, v_waypoints=[10.0] * len(lane_ex.waypoints),
+            t_land=1015.0, pad_id="pad1",
+            slot_index=1, status="COMMITTED", algorithm='SCRP',
         )
 
         result = resolve_conflict(fi, [existing], system_state.vertiport_state, system_state, config)

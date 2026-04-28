@@ -20,10 +20,12 @@ def _make_soft_plan(drone_id: str, lane, expires_at: float) -> ApprovedPlan:
         uav_type="A",
         lane=lane,
         waypoint_times=wt,
+        v_waypoints=[10.0] * len(lane.waypoints),
         t_land=100.0,
         pad_id="pad1",
         slot_index=5,
         status="SOFT_RESERVED",
+        algorithm='SCRP',
         expires_at=expires_at,
     )
 
