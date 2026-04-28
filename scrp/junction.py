@@ -1,9 +1,9 @@
 """Junction conflict detection and C2 delay computation."""
 from __future__ import annotations
 
-from typing import Dict, List, Set
+from typing import List, Set
 
-from .geometry import t_arrival_at_waypoint
+from .geometry import plan_waypoint_times_dict, t_arrival_at_waypoint
 from .models import ApprovedPlan, FlightIntention, Lane, SCRPConfig, SystemState, Waypoint
 
 
@@ -49,7 +49,7 @@ def compute_delta_C2(
         t_arr_new = t_arrival_at_waypoint(fi, idx_new, t_des)
 
         for plan in approved_plans:
-            plan_times: Dict[str, float] = {w.id: t for w, t in plan.waypoint_times}
+            plan_times = plan_waypoint_times_dict(plan)
             tau_J = plan_times.get(junction.id)
             if tau_J is None:
                 continue

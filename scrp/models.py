@@ -51,6 +51,8 @@ class FlightIntention:
     P_hover: float            # hover power [W]
     priority: int             # 1 | 2 | 3
     operator_id: str
+    t_takeoff: Optional[float] = None       # estimated actual takeoff time; if None, t_des is used
+    t_land_estimated: Optional[float] = None  # pre-estimated landing time at t_des; informational
 
 
 @dataclass
@@ -58,12 +60,13 @@ class ApprovedPlan:
     drone_id: str
     uav_type: str
     lane: Lane
-    waypoint_times: List[Tuple[Waypoint, float]]  # [(waypoint, abs_time), ...]
     v_waypoints: List[float]                       # velocity entering each segment; len == len(lane.waypoints)
     t_land: float
     pad_id: str
     slot_index: int
     status: str   # 'SOFT_RESERVED' | 'COMMITTED'
+    t_dep: Optional[float] = None                  # approved departure time; used to compute waypoint_times lazily
+    waypoint_times: List[Tuple[Waypoint, float]] = field(default_factory=list)  # [(waypoint, abs_time), ...]
     algorithm: str = 'SCRP'                        # algorithm that produced this plan
     expires_at: Optional[float] = None
 

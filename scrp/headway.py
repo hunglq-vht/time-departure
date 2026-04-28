@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import List
 
-from .geometry import common_waypoints, t_arrival_at_waypoint
+from .geometry import common_waypoints, plan_waypoint_times_dict, t_arrival_at_waypoint
 from .models import ApprovedPlan, FlightIntention, Segment, SystemState
 
 
@@ -40,8 +40,8 @@ def compute_delta_C1(
         if not shared:
             continue
 
-        # Build lookup: waypoint_id -> arrival time for this plan
-        plan_times = {w.id: t for w, t in plan.waypoint_times}
+        # Build lookup: waypoint_id -> arrival time (computed lazily if waypoint_times absent)
+        plan_times = plan_waypoint_times_dict(plan)
 
         for idx_new, idx_plan in shared:
             # Only consider segments (not the last waypoint which has no outgoing segment)
