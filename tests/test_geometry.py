@@ -72,3 +72,65 @@ def test_euclidean_distance():
     a = make_waypoint("A", 0, 0, 0)
     b = make_waypoint("B", 3, 4, 0)
     assert euclidean_distance(a, b) == pytest.approx(5.0)
+
+
+# ── takeoff / landing duration tests ──────────────────────────────────────────
+
+def test_t_land_includes_takeoff_duration():
+    """t_land should add t_takeoff before the lane traversal."""
+    wps = [make_waypoint("A", 0, 0), make_waypoint("B", 100, 0)]
+    lane = make_lane("l", wps)
+    fi = make_fi(lane, v=10.0, t_des=0.0)
+    fi.t_takeoff = 5.0  # 5 s takeoff phase
+    # cruise: 100m / 10m/s = 10 s; total = 5 + 10 = 15 s
+    assert t_land(fi, 0.0) == pytest.approx(15.0)
+
+
+def test_t_land_includes_landing_duration():
+    """t_land should add t_land_estimated after the lane traversal."""
+    wps = [make_waypoint("A", 0, 0), make_waypoint("B", 100, 0)]
+    lane = make_lane("l", wps)
+    fi = make_fi(lane, v=10.0, t_des=0.0)
+    fi.t_land_estimated = 8.0  # 8 s landing phase
+    # cruise: 10 s; total = 10 + 8 = 18 s
+    assert t_land(fi, 0.0) == pytest.approx(18.0)
+
+
+def test_t_land_includes_both_durations():
+    """t_land accounts for takeoff and landing phase durations together."""
+    wps = [make_waypoint("A", 0, 0), make_waypoint("B", 100, 0)]
+    lane = make_lane("l", wps)
+    fi = make_fi(lane, v=10.0, t_des=0.0)
+    fi.t_takeoff = 5.0
+    fi.t_land_estimated = 8.0
+    # cruise: 10 s; total = 5 + 10 + 8 = 23 s
+    assert t_land(fi, 0.0) == pytest.approx(23.0)
+
+
+def test_waypoint_arrival_times_offset_by_takeoff():
+    """All waypoint times are shifted by t_takeoff relative to t_dep."""
+    wps = [make_waypoint(f"P{i}", i * 100, 0) for i in range(3)]
+    lane = make_lane("l", wps)
+    fi = make_fi(lane, v=10.0, t_des=0.0)
+    fi.t_takeoff = 6.0
+
+    times_no_takeoff = waypoint_arrival_times(make_fi(lane, v=10.0, t_des=0.0), 0.0)
+    times_with_takeoff = waypoint_arrival_times(fi, 0.0)
+
+    assert len(times_with_takeoff) == len(times_no_takeoff)
+    for t_base, t_shifted in zip(times_no_takeoff, times_with_takeoff):
+        assert t_shifted == pytest.approx(t_base + 6.0)
+
+
+def test_t_arrival_at_waypoint_offset_by_takeoff():
+    """t_arrival_at_waypoint is shifted by t_takeoff for every index."""
+    wps = [make_waypoint(f"P{i}", i * 100, 0) for i in range(4)]
+    lane = make_lane("l", wps)
+    fi_base = make_fi(lane, v=10.0, t_des=0.0)
+    fi_tk = make_fi(lane, v=10.0, t_des=0.0)
+    fi_tk.t_takeoff = 7.0
+
+    for k in range(4):
+        base = t_arrival_at_waypoint(fi_base, k, 0.0)
+        shifted = t_arrival_at_waypoint(fi_tk, k, 0.0)
+        assert shifted == pytest.approx(base + 7.0)

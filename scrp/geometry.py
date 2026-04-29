@@ -13,9 +13,15 @@ def segment_travel_times(v_waypoints: List[float], segments_lengths: List[float]
 
 
 def waypoint_arrival_times(fi: FlightIntention, t_dep: float) -> List[float]:
-    """Absolute arrival time at each waypoint given departure time t_dep."""
-    times: List[float] = [t_dep]
-    cumulative = t_dep
+    """Absolute arrival time at each waypoint given departure time t_dep.
+
+    Offsets all times by the takeoff duration so that times[0] reflects
+    when the drone enters the first lane waypoint (after lifting off).
+    """
+    takeoff_dur = fi.t_takeoff if fi.t_takeoff is not None else 0.0
+    times: List[float] = []
+    cumulative = t_dep + takeoff_dur
+    times.append(cumulative)
     for seg, v in zip(fi.lane.segments, fi.v_waypoints):
         cumulative += seg.length / v
         times.append(cumulative)
@@ -23,8 +29,12 @@ def waypoint_arrival_times(fi: FlightIntention, t_dep: float) -> List[float]:
 
 
 def t_arrival_at_waypoint(fi: FlightIntention, waypoint_index: int, t_dep: float) -> float:
-    """Arrival time at waypoints[waypoint_index] given t_dep."""
-    t = t_dep
+    """Arrival time at waypoints[waypoint_index] given t_dep.
+
+    Includes the takeoff duration so the result represents when the drone
+    is physically at that waypoint in the airspace.
+    """
+    t = t_dep + (fi.t_takeoff if fi.t_takeoff is not None else 0.0)
     for k in range(waypoint_index):
         seg = fi.lane.segments[k]
         t += seg.length / fi.v_waypoints[k]
@@ -32,11 +42,18 @@ def t_arrival_at_waypoint(fi: FlightIntention, waypoint_index: int, t_dep: float
 
 
 def t_land(fi: FlightIntention, t_dep: float) -> float:
-    """Total flight time added to t_dep gives landing time."""
-    total = t_dep
+    """Full time from t_dep to wheels-down at the destination.
+
+    Adds the takeoff phase duration before lane traversal and the landing
+    phase duration after it, so the result is the moment the drone is fully
+    on the destination pad.
+    """
+    takeoff_dur = fi.t_takeoff if fi.t_takeoff is not None else 0.0
+    land_dur = fi.t_land_estimated if fi.t_land_estimated is not None else 0.0
+    total = t_dep + takeoff_dur
     for seg, v in zip(fi.lane.segments, fi.v_waypoints):
         total += seg.length / v
-    return total
+    return total + land_dur
 
 
 def waypoint_index_in_lane(wp: Waypoint, lane: Lane) -> int:
