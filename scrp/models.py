@@ -51,8 +51,8 @@ class FlightIntention:
     P_hover: float            # hover power [W]
     priority: int             # 1 | 2 | 3
     operator_id: str
-    t_takeoff: Optional[float] = None       # estimated actual takeoff time; if None, t_des is used
-    t_land_estimated: Optional[float] = None  # pre-estimated landing time at t_des; informational
+    t_takeoff: Optional[float] = None       # takeoff phase duration [s]; added before entering the lane
+    t_land_estimated: Optional[float] = None  # landing phase duration [s]; added after exiting the lane
 
 
 @dataclass

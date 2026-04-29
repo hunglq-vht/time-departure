@@ -28,11 +28,17 @@ def compute_SoC_remaining(
 
     t_slot_start: absolute start time of the assigned landing slot.
     Returns SoC as a fraction [0..1].
+
+    Hover wait is measured from when the drone reaches the destination
+    airspace (after lane traversal, before the landing phase) to when its
+    slot opens.  The landing-phase duration is stripped from t_land so the
+    drone is not modelled as hovering while already on the ground.
     """
     from .geometry import t_land as compute_t_land
 
-    t_land_val = compute_t_land(fi, t_dep_star)
-    t_hover_wait = max(0.0, t_slot_start - t_land_val)
+    land_dur = fi.t_land_estimated if fi.t_land_estimated is not None else 0.0
+    t_arrive_at_dest = compute_t_land(fi, t_dep_star) - land_dur
+    t_hover_wait = max(0.0, t_slot_start - t_arrive_at_dest)
     E_hover = fi.P_hover * (t_hover_wait / 3600.0)
 
     E_total = E_cruise + E_hover
