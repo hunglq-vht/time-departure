@@ -17,12 +17,16 @@ def h_min_full(
 ) -> float:
     """Full headway requirement accounting for velocity difference on a segment.
 
-    h_min_full = (MSD + L_body_j) / v_fast
-                 + |v_i - v_j| * L_k / v_fast^2
+    h_min_full = (MSD + L_body_j) / v_j
+                 + max(0, v_i - v_j) * L_k / (v_i * v_j)
+
+    Term 1: time headway needed so the spatial gap at segment entry equals MSD + L_j,
+            using v_j because that is the speed drone j actually travelled during h seconds.
+    Term 2: correction for gap closing when the follower is faster (v_i > v_j); zero
+            when v_j >= v_i because the gap widens and entry is already the worst point.
     """
-    v_fast = max(v_i, v_j)
-    base = (msd + body_len_j) / v_fast
-    correction = abs(v_i - v_j) * seg_length / (v_fast * v_fast)
+    base = (msd + body_len_j) / v_j
+    correction = max(0.0, v_i - v_j) * seg_length / (v_i * v_j) if v_i > v_j else 0.0
     return base + correction
 
 
