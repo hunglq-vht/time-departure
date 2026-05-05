@@ -59,7 +59,7 @@ def find_earliest_slot(
                 break
             key = (pad.id, si)
             status = vertiport_state.slot_status.get(key, 'COMMITTED')
-            if status in ('FREE', 'SOFT'):
+            if status == 'FREE':
                 t_start = slot_start_time(si, t_epoch, slot_dur)
                 if t_start < best_t:
                     best_t = t_start
