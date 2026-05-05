@@ -178,11 +178,11 @@ class TestFullFlowWithOperatorLifecycle:
         #
         # Submission offsets within the 10-second window are noted in comments.
         fis = [
-            make_fi(lane_a, v=V, t_des=T_BASE + 120.0, drone_id="drone_1", operator_id="op1"),  # +0 s
-            make_fi(lane_a, v=V, t_des=T_BASE + 131.0, drone_id="drone_2", operator_id="op2"),  # +2 s
-            make_fi(lane_a, v=V, t_des=T_BASE + 156.0, drone_id="drone_3", operator_id="op3"),  # +5 s
-            make_fi(lane_b, v=V, t_des=T_BASE + 220.0, drone_id="drone_4", operator_id="op4"),  # +7 s
-            make_fi(lane_b, v=V, t_des=T_BASE + 221.0, drone_id="drone_5", operator_id="op5"),  # +9 s
+            make_fi(lane_a, v=V,   t_des=T_BASE + 120.0, drone_id="drone_1", operator_id="op1"),  # +0 s
+            make_fi(lane_a, v=V+2, t_des=T_BASE + 131.0, drone_id="drone_2", operator_id="op2"),  # +2 s
+            make_fi(lane_a, v=V+1, t_des=T_BASE + 156.0, drone_id="drone_3", operator_id="op3"),  # +5 s
+            make_fi(lane_b, v=V,   t_des=T_BASE + 220.0, drone_id="drone_4", operator_id="op4"),  # +7 s
+            make_fi(lane_b, v=V,   t_des=T_BASE + 221.0, drone_id="drone_5", operator_id="op5"),  # +9 s
         ]
 
         results: dict[str, ApproveResult] = {}
@@ -258,14 +258,16 @@ class TestFullFlowWithOperatorLifecycle:
         # comes from C3 slot alignment, so t_dep_star >= t_des.
         assert results["drone_1"].t_dep_star >= T_BASE + 120.0
 
-        # drone_2 and drone_3 are delayed beyond their desired times: each t_des
-        # is just 1 s after the preceding drone's t_dep_star, so the 5.1 s h_min
-        # headway is violated, and C1 + C3 combine to push t_dep* further out.
+        # drone_2 (v=V+2) is faster than drone_1 (v=V): C1 headway correction applies
+        # and C3 slot alignment pushes t_dep* further out.
+        # drone_3 (v=V+1) departs before drone_2's t_dep* so C1 gives no constraint;
+        # its shorter flight time lands it in the same slot window as drone_2, so
+        # C3 alignment alone forces the delay to the next free slot.
         assert results["drone_2"].delay_seconds > 0, (
-            "drone_2 must be delayed (C1 headway from drone_1)"
+            "drone_2 must be delayed (C1 headway from drone_1 + C3 slot alignment)"
         )
         assert results["drone_3"].delay_seconds > 0, (
-            "drone_3 must be delayed (C1 headway from drone_2)"
+            "drone_3 must be delayed (C3 slot alignment — slot 340 held by drone_2)"
         )
 
         # Slots must be distinct — the design gives each drone a unique slot.
