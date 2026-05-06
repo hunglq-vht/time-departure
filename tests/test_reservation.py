@@ -13,7 +13,7 @@ from scrp.models import ApprovedPlan
 from tests.conftest import make_lane, make_system_state, make_vertiport, make_waypoint
 
 
-def _make_soft_plan(drone_id: str, lane, expires_at: float) -> ApprovedPlan:
+def _make_soft_plan(drone_id: str, lane, expires_at: float, vertiport_id: str = "vp1") -> ApprovedPlan:
     wt = [(wp, float(i * 10)) for i, wp in enumerate(lane.waypoints)]
     return ApprovedPlan(
         drone_id=drone_id,
@@ -27,6 +27,7 @@ def _make_soft_plan(drone_id: str, lane, expires_at: float) -> ApprovedPlan:
         status="SOFT_RESERVED",
         algorithm='SCRP',
         expires_at=expires_at,
+        vertiport_id=vertiport_id,
     )
 
 
@@ -43,7 +44,7 @@ class TestCommitReservation:
         committed = next(p for p in new_state.approved_plans if p.drone_id == "d1")
         assert committed.status == "COMMITTED"
         assert committed.expires_at is None
-        assert new_state.vertiport_state.slot_status[("pad1", 5)] == "COMMITTED"
+        assert new_state.vertiports["vp1"].slot_status[("pad1", 5)] == "COMMITTED"
 
     def test_commit_does_not_mutate_original(self):
         wps = [make_waypoint("P1"), make_waypoint("P2")]
@@ -66,8 +67,8 @@ class TestReleaseReservation:
 
         new_state = release_reservation("d1", state)
         assert not any(p.drone_id == "d1" for p in new_state.approved_plans)
-        assert new_state.vertiport_state.slot_status[("pad1", 5)] == "FREE"
-        assert new_state.vertiport_state.slots[("pad1", 5)] is None
+        assert new_state.vertiports["vp1"].slot_status[("pad1", 5)] == "FREE"
+        assert new_state.vertiports["vp1"].slots[("pad1", 5)] is None
 
 
 class TestExpireSoftReservations:
@@ -82,7 +83,7 @@ class TestExpireSoftReservations:
 
         new_state = expire_soft_reservations(new_state := make_system_state([plan], vp, t_now=900.0), 900.0)
         assert not any(p.drone_id == "d1" for p in new_state.approved_plans)
-        assert new_state.vertiport_state.slot_status[("pad1", 5)] == "FREE"
+        assert new_state.vertiports["vp1"].slot_status[("pad1", 5)] == "FREE"
 
     def test_non_expired_plan_kept(self):
         wps = [make_waypoint("P1"), make_waypoint("P2")]

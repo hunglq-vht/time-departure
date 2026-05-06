@@ -20,7 +20,13 @@ def make_waypoint(id: str, x: float = 0.0, y: float = 0.0, z: float = 50.0) -> W
     return Waypoint(id=id, position=(x, y, z))
 
 
-def make_lane(id: str, waypoints: list[Waypoint], v_min: float = 5.0, v_max: float = 20.0) -> Lane:
+def make_lane(
+    id: str,
+    waypoints: list[Waypoint],
+    v_min: float = 5.0,
+    v_max: float = 20.0,
+    destination_vertiport_id: str = "vp1",
+) -> Lane:
     import math
     segments = []
     for i in range(len(waypoints) - 1):
@@ -30,7 +36,12 @@ def make_lane(id: str, waypoints: list[Waypoint], v_min: float = 5.0, v_max: flo
         dz = b.position[2] - a.position[2]
         length = math.sqrt(dx * dx + dy * dy + dz * dz)
         segments.append(Segment(p_start=a, p_end=b, length=length, v_min=v_min, v_max=v_max))
-    lane = Lane(id=id, waypoints=waypoints, segments=segments)
+    lane = Lane(
+        id=id,
+        waypoints=waypoints,
+        segments=segments,
+        destination_vertiport_id=destination_vertiport_id,
+    )
     return lane
 
 
@@ -60,13 +71,24 @@ def make_fi(
     )
 
 
-def make_vertiport(slot_duration: float = 30.0, n_slots: int = 200) -> VertiportState:
-    pad = Pad(id="pad1", compatible_types=["A", "B", "C"])
-    slots = {("pad1", i): None for i in range(n_slots)}
-    slot_status = {("pad1", i): "FREE" for i in range(n_slots)}
+def make_vertiport(
+    slot_duration: float = 30.0,
+    n_slots: int = 200,
+    vertiport_id: str = "vp1",
+    pad_configs: list[tuple[str, list[str]]] | None = None,
+) -> VertiportState:
+    if pad_configs is None:
+        pad_configs = [("pad1", ["A", "B", "C"])]
+    pads = [Pad(id=pid, compatible_types=types) for pid, types in pad_configs]
+    slots: dict = {}
+    slot_status: dict = {}
+    for pid, _ in pad_configs:
+        for i in range(n_slots):
+            slots[(pid, i)] = None
+            slot_status[(pid, i)] = "FREE"
     return VertiportState(
-        vertiport_id="vp1",
-        pads=[pad],
+        vertiport_id=vertiport_id,
+        pads=pads,
         slot_duration=slot_duration,
         slots=slots,
         slot_status=slot_status,
@@ -77,10 +99,20 @@ def make_system_state(
     approved_plans: list[ApprovedPlan] | None = None,
     vertiport: VertiportState | None = None,
     t_now: float = 900.0,
+    vertiports: dict[str, VertiportState] | None = None,
 ) -> SystemState:
+    """Build a SystemState.
+
+    Pass ``vertiports`` for multi-vertiport setups.  For single-vertiport
+    tests the legacy ``vertiport`` kwarg is still accepted; it is stored
+    under its own ``vertiport_id``.
+    """
+    if vertiports is None:
+        vp = vertiport or make_vertiport()
+        vertiports = {vp.vertiport_id: vp}
     return SystemState(
         approved_plans=approved_plans or [],
-        vertiport_state=vertiport or make_vertiport(),
+        vertiports=vertiports,
         t_now=t_now,
         msd_matrix={
             ("A", "A"): 50.0,
@@ -109,7 +141,7 @@ def simple_lane() -> Lane:
         make_waypoint("P2", 100, 0),
         make_waypoint("P3", 200, 0),
     ]
-    return make_lane("lane1", wps)
+    return make_lane("lane1", wps, destination_vertiport_id="vp1")
 
 
 @pytest.fixture

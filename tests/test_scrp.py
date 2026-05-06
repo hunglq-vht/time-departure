@@ -18,7 +18,14 @@ from tests.conftest import (
 )
 
 
-def _committed_plan(lane, t_start: float, v: float = 10.0, drone_id: str = "d_existing", status: str = "COMMITTED") -> ApprovedPlan:
+def _committed_plan(
+    lane,
+    t_start: float,
+    v: float = 10.0,
+    drone_id: str = "d_existing",
+    status: str = "COMMITTED",
+    vertiport_id: str = "vp1",
+) -> ApprovedPlan:
     cumulative = t_start
     wt = []
     for i, wp in enumerate(lane.waypoints):
@@ -36,6 +43,7 @@ def _committed_plan(lane, t_start: float, v: float = 10.0, drone_id: str = "d_ex
         slot_index=0,
         status=status,
         algorithm='SCRP',
+        vertiport_id=vertiport_id,
     )
 
 
@@ -44,7 +52,7 @@ def _committed_plan(lane, t_start: float, v: float = 10.0, drone_id: str = "d_ex
 class TestNoConflict:
     def test_no_approved_plans(self, simple_lane, system_state, config):
         fi = make_fi(simple_lane, v=10.0, t_des=1000.0)
-        result = resolve_conflict(fi, [], system_state.vertiport_state, system_state, config)
+        result = resolve_conflict(fi, [], system_state, config)
         assert isinstance(result, ApproveResult)
         assert result.t_dep_star == pytest.approx(1000.0)
         assert result.delay_seconds == pytest.approx(0.0, abs=1e-9)
@@ -60,7 +68,7 @@ class TestHeadwaySingle:
         existing = _committed_plan(simple_lane, t_start=1000.0, v=10.0)
         fi = make_fi(simple_lane, v=10.0, t_des=t_des)
 
-        result = resolve_conflict(fi, [existing], system_state.vertiport_state, system_state, config)
+        result = resolve_conflict(fi, [existing], system_state, config)
         assert isinstance(result, ApproveResult)
 
         h = h_min_full(50.0, 1.0, 10.0, 10.0, 100.0, 5.0)
@@ -120,7 +128,7 @@ class TestJunctionConflict:
             slot_index=1, status="COMMITTED", algorithm='SCRP',
         )
 
-        result = resolve_conflict(fi, [existing], system_state.vertiport_state, system_state, config)
+        result = resolve_conflict(fi, [existing], system_state, config)
         assert isinstance(result, ApproveResult)
         assert result.delay_seconds > 0.0
 
@@ -137,7 +145,7 @@ class TestSlotOccupied:
         state = make_system_state(vertiport=vp)
         fi = make_fi(simple_lane, v=10.0, t_des=0.0)
 
-        result = resolve_conflict(fi, [], vp, state, config)
+        result = resolve_conflict(fi, [], state, config)
         assert isinstance(result, ApproveResult)
         assert result.slot_index >= 5
 
@@ -154,7 +162,7 @@ class TestSoCInsufficient:
         vp = make_vertiport()
         state = make_system_state(vertiport=vp)
 
-        result = resolve_conflict(fi, [], vp, state, config)
+        result = resolve_conflict(fi, [], state, config)
         assert isinstance(result, RejectResult)
         assert result.reason == 'SoC_insufficient'
 
@@ -171,8 +179,8 @@ class TestSoftReservedTreatedAsCommitted:
 
         fi = make_fi(simple_lane, v=10.0, t_des=t_des)
 
-        r1 = resolve_conflict(fi, [committed_plan], system_state.vertiport_state, system_state, config)
-        r2 = resolve_conflict(fi, [soft_plan], system_state.vertiport_state, system_state, config)
+        r1 = resolve_conflict(fi, [committed_plan], system_state, config)
+        r2 = resolve_conflict(fi, [soft_plan], system_state, config)
 
         assert isinstance(r1, ApproveResult)
         assert isinstance(r2, ApproveResult)
@@ -201,7 +209,7 @@ class TestSoftReservationTimeout:
         assert cleaned_state.approved_plans == []  # expired plan was removed
 
         fi = make_fi(simple_lane, v=10.0, t_des=1002.0)
-        result = resolve_conflict(fi, cleaned_state.approved_plans, cleaned_state.vertiport_state, cleaned_state, config)
+        result = resolve_conflict(fi, cleaned_state.approved_plans, cleaned_state, config)
         assert isinstance(result, ApproveResult)
         # No C1 headway delay because expired plan was removed
         assert result.delay_source != 'C1_headway'
@@ -221,7 +229,7 @@ class TestClosedFormCorrectness:
         vp = make_vertiport()
         state = make_system_state(vertiport=vp)
 
-        result = resolve_conflict(fi, [existing], vp, state, config)
+        result = resolve_conflict(fi, [existing], state, config)
         assert isinstance(result, ApproveResult)
 
         # Rebuild fi with adjusted t_dep* to verify no C1 violation
@@ -269,7 +277,7 @@ class TestPerformance:
             plans.append(plan)
 
         start = time.perf_counter()
-        result = resolve_conflict(fi, plans, vp, state, config)
+        result = resolve_conflict(fi, plans, state, config)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
 
         assert elapsed_ms < 200.0, f"resolve_conflict took {elapsed_ms:.1f}ms (limit: 200ms)"
@@ -288,7 +296,7 @@ class TestPerformance:
             plans.append(plan)
 
         start = time.perf_counter()
-        resolve_conflict(fi, plans, vp, state, config)
+        resolve_conflict(fi, plans, state, config)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         assert elapsed_ms < 200.0, f"resolve_conflict took {elapsed_ms:.1f}ms"
 
@@ -299,13 +307,13 @@ class TestValidation:
     def test_invalid_fi_wrong_v_waypoints_length(self, simple_lane, system_state, config):
         fi = make_fi(simple_lane, v=10.0)
         fi.v_waypoints = [10.0]  # wrong length
-        result = resolve_conflict(fi, [], system_state.vertiport_state, system_state, config)
+        result = resolve_conflict(fi, [], system_state, config)
         assert isinstance(result, RejectResult)
         assert result.reason == 'invalid_fi'
 
     def test_invalid_fi_soc_out_of_range(self, simple_lane, system_state, config):
         fi = make_fi(simple_lane, v=10.0, SoC_0=1.5)
-        result = resolve_conflict(fi, [], system_state.vertiport_state, system_state, config)
+        result = resolve_conflict(fi, [], system_state, config)
         assert isinstance(result, RejectResult)
         assert result.reason == 'invalid_fi'
 
@@ -317,6 +325,6 @@ class TestValidation:
             vp.slots[("pad1", i)] = f"d{i}"
         state = make_system_state(vertiport=vp)
         fi = make_fi(simple_lane, v=10.0, t_des=0.0)
-        result = resolve_conflict(fi, [], vp, state, config)
+        result = resolve_conflict(fi, [], state, config)
         assert isinstance(result, RejectResult)
         assert result.reason == 'no_slot_available'

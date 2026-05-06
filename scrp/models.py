@@ -24,6 +24,7 @@ class Lane:
     id: str
     waypoints: List[Waypoint]
     segments: List[Segment] = field(default_factory=list)
+    destination_vertiport_id: str = ""  # vertiport where this lane terminates
 
     def __post_init__(self) -> None:
         if not self.segments and len(self.waypoints) >= 2:
@@ -69,6 +70,7 @@ class ApprovedPlan:
     waypoint_times: List[Tuple[Waypoint, float]] = field(default_factory=list)  # [(waypoint, abs_time), ...]
     algorithm: str = 'SCRP'                        # algorithm that produced this plan
     expires_at: Optional[float] = None
+    vertiport_id: str = ""                         # destination vertiport for slot management
 
 
 @dataclass
@@ -89,7 +91,7 @@ class VertiportState:
 @dataclass
 class SystemState:
     approved_plans: List[ApprovedPlan]
-    vertiport_state: VertiportState
+    vertiports: Dict[str, VertiportState]     # vertiport_id -> VertiportState
     t_now: float
     msd_matrix: Dict[Tuple[str, str], float]  # (uav_type_i, uav_type_j) -> MSD [m]
     body_length: Dict[str, float]             # uav_type -> body length [m]
@@ -113,6 +115,7 @@ class ApproveResult:
     t_land_assigned: float
     pad_id: str
     slot_index: int
+    vertiport_id: str                        # destination vertiport for this approval
     waypoint_times: List[Tuple[str, float]]  # [(waypoint_id, time), ...]
     expires_at: float
     delay_seconds: float

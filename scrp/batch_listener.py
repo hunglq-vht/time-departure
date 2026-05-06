@@ -97,7 +97,6 @@ class BatchListener:
             result = resolve_conflict(
                 fi,
                 state.approved_plans,
-                state.vertiport_state,
                 state,
                 self._config,
             )

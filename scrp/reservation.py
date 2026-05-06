@@ -20,6 +20,8 @@ def create_soft_reservation(
     """Create a SOFT_RESERVED plan and mark the slot. Returns mutated state copy."""
     new_state = copy.deepcopy(state)
 
+    vertiport_id = fi_lane.destination_vertiport_id
+
     # Build waypoint_times list of (Waypoint, float)
     wp_map = {w.id: w for w in fi_lane.waypoints}
     waypoint_times: List[Tuple[Waypoint, float]] = [
@@ -39,12 +41,14 @@ def create_soft_reservation(
         waypoint_times=waypoint_times,
         algorithm=algorithm,
         expires_at=result.expires_at,
+        vertiport_id=vertiport_id,
     )
     new_state.approved_plans.append(plan)
 
     key = (result.pad_id, result.slot_index)
-    new_state.vertiport_state.slots[key] = fi_drone_id
-    new_state.vertiport_state.slot_status[key] = 'SOFT'
+    vp = new_state.vertiports[vertiport_id]
+    vp.slots[key] = fi_drone_id
+    vp.slot_status[key] = 'SOFT'
 
     return new_state
 
@@ -57,7 +61,7 @@ def commit_reservation(drone_id: str, state: SystemState) -> SystemState:
             plan.status = 'COMMITTED'
             plan.expires_at = None
             key = (plan.pad_id, plan.slot_index)
-            new_state.vertiport_state.slot_status[key] = 'COMMITTED'
+            new_state.vertiports[plan.vertiport_id].slot_status[key] = 'COMMITTED'
             break
     return new_state
 
@@ -68,8 +72,9 @@ def release_reservation(drone_id: str, state: SystemState) -> SystemState:
     for i, plan in enumerate(new_state.approved_plans):
         if plan.drone_id == drone_id:
             key = (plan.pad_id, plan.slot_index)
-            new_state.vertiport_state.slots[key] = None
-            new_state.vertiport_state.slot_status[key] = 'FREE'
+            vp = new_state.vertiports[plan.vertiport_id]
+            vp.slots[key] = None
+            vp.slot_status[key] = 'FREE'
             new_state.approved_plans.pop(i)
             break
     return new_state
@@ -84,8 +89,10 @@ def expire_soft_reservations(state: SystemState, t_now: float) -> SystemState:
     ]
     for plan in expired:
         key = (plan.pad_id, plan.slot_index)
-        new_state.vertiport_state.slots[key] = None
-        new_state.vertiport_state.slot_status[key] = 'FREE'
+        vp = new_state.vertiports.get(plan.vertiport_id)
+        if vp is not None:
+            vp.slots[key] = None
+            vp.slot_status[key] = 'FREE'
         new_state.approved_plans.remove(plan)
     return new_state
 
