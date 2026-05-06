@@ -16,7 +16,6 @@ from .models import (
     SCRPConfig,
     SCRPResult,
     SystemState,
-    VertiportState,
 )
 from .slot import find_earliest_slot, slot_start_time
 
@@ -62,13 +61,13 @@ def _determine_delay_source(
 def resolve_conflict(
     fi: FlightIntention,
     approved_plans: List[ApprovedPlan],
-    vertiport_state: VertiportState,
     system_state: SystemState,
     config: SCRPConfig,
 ) -> SCRPResult:
     """Compute optimal departure time t_dep* for the given FlightIntention.
 
     Pure function — does not mutate any state.
+    The destination vertiport is derived from fi.lane.destination_vertiport_id.
     """
     # Step 1 — Validate
     err = _validate_fi(fi)
@@ -78,6 +77,16 @@ def resolve_conflict(
             reason='invalid_fi',
             earliest_possible=None,
             detail=err,
+        )
+
+    vertiport_id = fi.lane.destination_vertiport_id
+    vertiport_state = system_state.vertiports.get(vertiport_id)
+    if vertiport_state is None:
+        return RejectResult(
+            status='REJECTED',
+            reason='unknown_vertiport',
+            earliest_possible=None,
+            detail=f"No vertiport found for id '{vertiport_id}' (lane '{fi.lane.id}')",
         )
 
     t_des = fi.t_des
@@ -173,6 +182,7 @@ def resolve_conflict(
         t_land_assigned=t_land_final,
         pad_id=pad_id,
         slot_index=slot_index,
+        vertiport_id=vertiport_id,
         waypoint_times=waypoint_times_out,
         expires_at=expires_at,
         delay_seconds=t_dep_star - t_des,
