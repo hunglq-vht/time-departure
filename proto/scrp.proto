@@ -1,0 +1,177 @@
+syntax = "proto3";
+
+package scrp;
+
+// ---------- Primitive building blocks ----------
+
+message WaypointProto {
+  string id = 1;
+  double x = 2;
+  double y = 3;
+  double z = 4;
+}
+
+message SegmentProto {
+  WaypointProto p_start = 1;
+  WaypointProto p_end = 2;
+  double length = 3;
+  double v_min = 4;
+  double v_max = 5;
+}
+
+message LaneProto {
+  string id = 1;
+  repeated WaypointProto waypoints = 2;
+  repeated SegmentProto segments = 3;
+}
+
+// ---------- Flight intention ----------
+
+message FlightIntentionProto {
+  string drone_id = 1;
+  string uav_type = 2;
+  LaneProto lane = 3;
+  repeated double v_waypoints = 4;
+  double t_des = 5;
+  double soc_0 = 6;
+  double c_bat = 7;
+  double p_hover = 8;
+  int32 priority = 9;
+  string operator_id = 10;
+  // Optional fields — 0.0 means "not provided"
+  double t_takeoff = 11;
+  double t_land_estimated = 12;
+}
+
+// ---------- Approved plans ----------
+
+message WaypointTimeEntryProto {
+  WaypointProto waypoint = 1;
+  double time = 2;
+}
+
+message ApprovedPlanProto {
+  string drone_id = 1;
+  string uav_type = 2;
+  LaneProto lane = 3;
+  repeated double v_waypoints = 4;
+  double t_land = 5;
+  string pad_id = 6;
+  int32 slot_index = 7;
+  string status = 8;  // 'SOFT_RESERVED' | 'COMMITTED'
+  double t_dep = 9;
+  repeated WaypointTimeEntryProto waypoint_times = 10;
+  string algorithm = 11;
+  double expires_at = 12;
+}
+
+// ---------- Vertiport ----------
+
+message PadProto {
+  string id = 1;
+  repeated string compatible_types = 2;
+}
+
+// Encodes one (pad_id, slot_index) → (drone_id, status) mapping entry
+message SlotEntryProto {
+  string pad_id = 1;
+  int32 slot_index = 2;
+  string drone_id = 3;   // empty string when unoccupied
+  string status = 4;     // 'FREE' | 'SOFT' | 'COMMITTED'
+}
+
+message VertiportStateProto {
+  string vertiport_id = 1;
+  repeated PadProto pads = 2;
+  double slot_duration = 3;
+  repeated SlotEntryProto slots = 4;
+}
+
+// ---------- System state ----------
+
+message MsdEntryProto {
+  string uav_type_i = 1;
+  string uav_type_j = 2;
+  double msd = 3;
+}
+
+message BodyLengthEntryProto {
+  string uav_type = 1;
+  double length_m = 2;
+}
+
+// SystemStateProto excludes approved_plans and vertiport_state
+// (those are passed explicitly in ResolveConflictRequest).
+message SystemStateProto {
+  repeated ApprovedPlanProto approved_plans = 1;
+  VertiportStateProto vertiport_state = 2;
+  double t_now = 3;
+  repeated MsdEntryProto msd_matrix = 4;
+  repeated BodyLengthEntryProto body_length = 5;
+}
+
+// ---------- Config ----------
+
+message SCRPConfigProto {
+  double soc_min = 1;
+  double slot_duration_sec = 2;
+  double t_response_window_sec = 3;
+  double junction_diameter_m = 4;
+  string default_timeout_behavior = 5;
+  double cruise_power_factor = 6;
+  double max_acceptable_delay_sec = 7;
+}
+
+// ---------- Results ----------
+
+message WaypointTimeResultProto {
+  string waypoint_id = 1;
+  double time = 2;
+}
+
+message ApproveResultProto {
+  string status = 1;             // always 'SOFT_RESERVED'
+  double t_dep_star = 2;
+  double t_land_assigned = 3;
+  string pad_id = 4;
+  int32 slot_index = 5;
+  repeated WaypointTimeResultProto waypoint_times = 6;
+  double expires_at = 7;
+  double delay_seconds = 8;
+  string delay_source = 9;
+  double energy_estimate = 10;
+  double soc_remaining = 11;
+}
+
+message RejectResultProto {
+  string status = 1;             // always 'REJECTED'
+  string reason = 2;
+  double earliest_possible = 3;  // 0.0 means "not available"
+  bool has_earliest_possible = 4;
+  string detail = 5;
+}
+
+// ---------- RPC messages ----------
+
+message ResolveConflictRequest {
+  FlightIntentionProto fi = 1;
+  repeated ApprovedPlanProto approved_plans = 2;
+  VertiportStateProto vertiport_state = 3;
+  SystemStateProto system_state = 4;
+  SCRPConfigProto config = 5;
+}
+
+message ResolveConflictResponse {
+  oneof result {
+    ApproveResultProto approve = 1;
+    RejectResultProto reject = 2;
+  }
+}
+
+// ---------- Service ----------
+
+service SCRPService {
+  // Compute the optimal departure time for a flight intention.
+  // Returns either an approval (SOFT_RESERVED) or a rejection with reason.
+  rpc ResolveConflict (ResolveConflictRequest) returns (ResolveConflictResponse);
+}
