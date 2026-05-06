@@ -161,9 +161,13 @@ class TestFullFlowWithOperatorLifecycle:
     def test_full_10s_window_with_operator_responses(self, config):
         lane_a, lane_b = _build_lanes()
 
-        # Vertiport: 1 pad, 500 slots — enough capacity that the only bottleneck
-        # is headway conflicts and natural slot alignment.
-        vp = make_vertiport(n_slots=500, slot_duration=30.0)
+        # Vertiport: 2 pads, 500 slots each — lane A lands at pad1 (type A),
+        # lane B lands at pad2 (type B). Only bottleneck is headway and slot alignment.
+        vp = make_vertiport(
+            n_slots=500,
+            slot_duration=30.0,
+            pad_configs=[("pad1", ["A"]), ("pad2", ["B"])],
+        )
         state = make_system_state(vertiport=vp, t_now=T_BASE)
 
         # ── Phase 1: submit 5 FIs within a 10-second window ─────────────────
@@ -181,8 +185,8 @@ class TestFullFlowWithOperatorLifecycle:
             make_fi(lane_a, v=V,   t_des=T_BASE + 120.0, drone_id="drone_1", operator_id="op1"),  # +0 s
             make_fi(lane_a, v=V+2, t_des=T_BASE + 131.0, drone_id="drone_2", operator_id="op2"),  # +2 s
             make_fi(lane_a, v=V+1, t_des=T_BASE + 156.0, drone_id="drone_3", operator_id="op3"),  # +5 s
-            make_fi(lane_b, v=V,   t_des=T_BASE + 220.0, drone_id="drone_4", operator_id="op4"),  # +7 s
-            make_fi(lane_b, v=V,   t_des=T_BASE + 221.0, drone_id="drone_5", operator_id="op5"),  # +9 s
+            make_fi(lane_b, v=V,   t_des=T_BASE + 220.0, drone_id="drone_4", operator_id="op4", uav_type="B"),  # +7 s
+            make_fi(lane_b, v=V,   t_des=T_BASE + 221.0, drone_id="drone_5", operator_id="op5", uav_type="B"),  # +9 s
         ]
 
         results: dict[str, ApproveResult] = {}
@@ -270,10 +274,13 @@ class TestFullFlowWithOperatorLifecycle:
             "drone_3 must be delayed (C3 slot alignment — slot 340 held by drone_2)"
         )
 
-        # Slots must be distinct — the design gives each drone a unique slot.
-        all_slots = [results[f"drone_{i}"].slot_index for i in range(1, 6)]
+        # Slots must be distinct per pad — same slot index on different pads is fine.
+        all_slots = [
+            (results[f"drone_{i}"].pad_id, results[f"drone_{i}"].slot_index)
+            for i in range(1, 6)
+        ]
         assert len(all_slots) == len(set(all_slots)), (
-            f"Every drone must receive a unique landing slot: {all_slots}"
+            f"Every drone must receive a unique (pad, slot) combination: {all_slots}"
         )
 
         # ── Phase 2: operator responses ──────────────────────────────────────
@@ -316,6 +323,7 @@ class TestFullFlowWithOperatorLifecycle:
             t_des=results["drone_4"].t_dep_star,
             drone_id="drone_6",
             operator_id="op6",
+            uav_type="B",
         )
         result_6 = resolve_conflict(
             fi_6, state.approved_plans, state.vertiport_state, state, config
@@ -333,6 +341,7 @@ class TestFullFlowWithOperatorLifecycle:
             t_des=results["drone_5"].t_dep_star,
             drone_id="drone_7",
             operator_id="op7",
+            uav_type="B",
         )
         result_7 = resolve_conflict(
             fi_7, state.approved_plans, state.vertiport_state, state, config
@@ -347,11 +356,14 @@ class TestFullFlowWithOperatorLifecycle:
 
         # At least one replacement drone must land in a previously freed slot,
         # proving that released SOFT reservations genuinely open capacity.
-        replacement_slots = {result_6.slot_index, result_7.slot_index}
-        freed_slot_indices = {results["drone_4"].slot_index, results["drone_5"].slot_index}
-        assert replacement_slots & freed_slot_indices, (
+        replacement_slots = {
+            (result_6.pad_id, result_6.slot_index),
+            (result_7.pad_id, result_7.slot_index),
+        }
+        freed_slot_keys = {freed_slot_4, freed_slot_5}
+        assert replacement_slots & freed_slot_keys, (
             f"Replacement FIs should reuse freed slots. "
-            f"Replacement slots: {replacement_slots}, freed: {freed_slot_indices}"
+            f"Replacement slots: {replacement_slots}, freed: {freed_slot_keys}"
         )
 
         # Replacement FIs also carry valid absolute waypoint timestamps.

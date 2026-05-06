@@ -60,13 +60,23 @@ def make_fi(
     )
 
 
-def make_vertiport(slot_duration: float = 30.0, n_slots: int = 200) -> VertiportState:
-    pad = Pad(id="pad1", compatible_types=["A", "B", "C"])
-    slots = {("pad1", i): None for i in range(n_slots)}
-    slot_status = {("pad1", i): "FREE" for i in range(n_slots)}
+def make_vertiport(
+    slot_duration: float = 30.0,
+    n_slots: int = 200,
+    pad_configs: list[tuple[str, list[str]]] | None = None,
+) -> VertiportState:
+    if pad_configs is None:
+        pad_configs = [("pad1", ["A", "B", "C"])]
+    pads = [Pad(id=pid, compatible_types=types) for pid, types in pad_configs]
+    slots: dict = {}
+    slot_status: dict = {}
+    for pid, _ in pad_configs:
+        for i in range(n_slots):
+            slots[(pid, i)] = None
+            slot_status[(pid, i)] = "FREE"
     return VertiportState(
         vertiport_id="vp1",
-        pads=[pad],
+        pads=pads,
         slot_duration=slot_duration,
         slots=slots,
         slot_status=slot_status,
