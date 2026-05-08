@@ -112,9 +112,14 @@ def _system_state_from_proto(p: scrp_pb2.SystemStateProto) -> SystemState:
         (e.uav_type_i, e.uav_type_j): e.msd for e in p.msd_matrix
     }
     body_length: Dict[str, float] = {e.uav_type: e.length_m for e in p.body_length}
+    vertiports = (
+        {vertiport_state.vertiport_id: vertiport_state}
+        if vertiport_state.vertiport_id
+        else {}
+    )
     return SystemState(
         approved_plans=approved_plans,
-        vertiport_state=vertiport_state,
+        vertiports=vertiports,
         t_now=p.t_now,
         msd_matrix=msd_matrix,
         body_length=body_length,
@@ -189,12 +194,14 @@ class SCRPServicer(scrp_pb2_grpc.SCRPServiceServicer):
     ) -> scrp_pb2.ResolveConflictResponse:
         try:
             fi = _fi_from_proto(request.fi)
-            approved_plans = [_approved_plan_from_proto(ap) for ap in request.approved_plans]
-            vertiport_state = _vertiport_from_proto(request.vertiport_state)
             system_state = _system_state_from_proto(request.system_state)
             config = _config_from_proto(request.config)
 
-            result = resolve_conflict(fi, approved_plans, vertiport_state, system_state, config)
+            # Infer destination vertiport for lanes that don't carry it explicitly
+            if not fi.lane.destination_vertiport_id and system_state.vertiports:
+                fi.lane.destination_vertiport_id = next(iter(system_state.vertiports))
+
+            result = resolve_conflict(fi, system_state.approved_plans, system_state, config)
 
             if isinstance(result, ApproveResult):
                 return scrp_pb2.ResolveConflictResponse(
