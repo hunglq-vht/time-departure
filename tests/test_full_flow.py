@@ -417,11 +417,29 @@ class TestFullFlowWithOperatorLifecycle:
 # Suite 3 — Priority sorting, t_takeoff/t_land_estimated, and lane isolation
 # ---------------------------------------------------------------------------
 
+# Per-UAV-type kinematic profile.  Each entry is
+#   (cruise_speed_m_s, takeoff_phase_s, landing_phase_s)
+# Values are chosen so every type has a distinctly different total block time.
+UAV_PROFILES: dict[str, tuple[float, float, float]] = {
+    #  type   v (m/s)  t_takeoff (s)  t_land_est (s)
+    "A": (10.0,  5.0,  8.0),   # lane time 40 s, block 53 s
+    "B": (12.0,  7.0, 12.0),   # lane time ~33.3 s, block ~52.3 s
+    "C": ( 8.0,  4.0,  6.0),   # lane time 50 s, block 60 s
+}
+
+
+def _fi_block_time(fi) -> float:
+    """Total time from t_dep_star until wheels-down: t_takeoff + lane + t_land_est."""
+    lane_time = sum(seg.length / v for seg, v in zip(fi.lane.segments, fi.v_waypoints))
+    return (fi.t_takeoff or 0.0) + lane_time + (fi.t_land_estimated or 0.0)
+
+
 class TestPriorityBatchSortingAndLaneIsolation:
     """Verify that:
 
-    1. Flight intentions carry t_takeoff and t_land_estimated and both are
-       reflected in waypoint_times and t_land_assigned.
+    1. Flight intentions carry per-UAV-type t_takeoff, t_land_estimated, and
+       velocity, and both timing fields are reflected in waypoint_times and
+       t_land_assigned.
     2. A batch of mixed-priority FIs is sorted by priority descending
        (emergency first) before processing.
     3. Each lane has at least one emergency (priority 3) FI.
@@ -429,43 +447,42 @@ class TestPriorityBatchSortingAndLaneIsolation:
        only same-lane approved plans and the destination vertiport's slot
        calendar influence a FI's departure time.
 
-    Scenario (T_TAKEOFF = 5 s, T_LAND_EST = 10 s, V = 10 m/s, 2 × 200 m):
-        total in-air time per flight = t_takeoff + 2*200/10 + t_land_est = 55 s
+    UAV profiles (v m/s | t_takeoff s | t_land_est s | block time s):
+        Type A : 10 |  5 |  8 | 53 s
+        Type B : 12 |  7 | 12 | ~52.3 s
+        Type C :  8 |  4 |  6 | 60 s
 
     Batch (unsorted):
-        drone_a_norm  : lane_a, priority=1, t_des = T_BASE+120
-        drone_b_norm  : lane_b, priority=1, t_des = T_BASE+220
-        drone_a_emerg : lane_a, priority=3, t_des = T_BASE+100  ← emergency
-        drone_b_emerg : lane_b, priority=3, t_des = T_BASE+200  ← emergency
+        drone_a_emerg : lane_a, type B, priority=3, t_des = T_BASE+100  ← emergency
+        drone_b_emerg : lane_b, type C, priority=3, t_des = T_BASE+200  ← emergency
+        drone_a_norm  : lane_a, type A, priority=1, t_des = T_BASE+160
+        drone_b_norm  : lane_b, type B, priority=1, t_des = T_BASE+280
 
     After priority sort (descending priority, then ascending t_des):
-        1. drone_a_emerg  (priority 3, t_des = T_BASE+100)
-        2. drone_b_emerg  (priority 3, t_des = T_BASE+200)
-        3. drone_a_norm   (priority 1, t_des = T_BASE+120)
-        4. drone_b_norm   (priority 1, t_des = T_BASE+220)
+        1. drone_a_emerg  (priority 3, lane_a, type B)
+        2. drone_b_emerg  (priority 3, lane_b, type C)
+        3. drone_a_norm   (priority 1, lane_a, type A)
+        4. drone_b_norm   (priority 1, lane_b, type B)
     """
 
-    # ------------------------------------------------------------------
-    # Constants shared across the test
-    # ------------------------------------------------------------------
-    T_TAKEOFF = 5.0
-    T_LAND_EST = 10.0
-    TOTAL_FLIGHT = T_TAKEOFF + FLIGHT_TIME + T_LAND_EST  # 55 s
     EMERGENCY = 3
     NORMAL = 1
 
     def _build_batch(self, lane_a, lane_b):
-        """Return an *unsorted* list of four FIs (two lanes × two priorities)."""
-        kw = dict(v=V, t_takeoff=self.T_TAKEOFF, t_land_estimated=self.T_LAND_EST)
+        """Return an *unsorted* list of four FIs, each with its UAV-type profile."""
+        def _kw(uav_type):
+            v, t_to, t_lo = UAV_PROFILES[uav_type]
+            return dict(v=v, uav_type=uav_type, t_takeoff=t_to, t_land_estimated=t_lo)
+
         return [
-            make_fi(lane_a, t_des=T_BASE + 120.0, drone_id="drone_a_norm",
-                    operator_id="op_an", priority=self.NORMAL, **kw),
-            make_fi(lane_b, t_des=T_BASE + 220.0, drone_id="drone_b_norm",
-                    operator_id="op_bn", priority=self.NORMAL, **kw),
             make_fi(lane_a, t_des=T_BASE + 100.0, drone_id="drone_a_emerg",
-                    operator_id="op_ae", priority=self.EMERGENCY, **kw),
+                    operator_id="op_ae", priority=self.EMERGENCY, **_kw("B")),
             make_fi(lane_b, t_des=T_BASE + 200.0, drone_id="drone_b_emerg",
-                    operator_id="op_be", priority=self.EMERGENCY, **kw),
+                    operator_id="op_be", priority=self.EMERGENCY, **_kw("C")),
+            make_fi(lane_a, t_des=T_BASE + 160.0, drone_id="drone_a_norm",
+                    operator_id="op_an", priority=self.NORMAL, **_kw("A")),
+            make_fi(lane_b, t_des=T_BASE + 280.0, drone_id="drone_b_norm",
+                    operator_id="op_bn", priority=self.NORMAL, **_kw("B")),
         ]
 
     def test_priority_sorting_and_lane_isolation(self, config):
@@ -492,6 +509,19 @@ class TestPriorityBatchSortingAndLaneIsolation:
         assert "lane_a" in emergency_lane_ids, "Lane A must have at least one emergency FI"
         assert "lane_b" in emergency_lane_ids, "Lane B must have at least one emergency FI"
 
+        # Each UAV type must carry its own distinct kinematic profile.
+        for fi in batch:
+            v_exp, to_exp, lo_exp = UAV_PROFILES[fi.uav_type]
+            assert fi.v_waypoints[0] == pytest.approx(v_exp), (
+                f"{fi.drone_id}: v_waypoints should be {v_exp} for type {fi.uav_type}"
+            )
+            assert fi.t_takeoff == pytest.approx(to_exp), (
+                f"{fi.drone_id}: t_takeoff should be {to_exp} for type {fi.uav_type}"
+            )
+            assert fi.t_land_estimated == pytest.approx(lo_exp), (
+                f"{fi.drone_id}: t_land_estimated should be {lo_exp} for type {fi.uav_type}"
+            )
+
         # ── Process sorted batch ─────────────────────────────────────────────
         state = make_system_state(
             vertiports={"vp_a": vp_a, "vp_b": vp_b},
@@ -501,7 +531,8 @@ class TestPriorityBatchSortingAndLaneIsolation:
         for fi in sorted_batch:
             result = resolve_conflict(fi, state.approved_plans, state, config)
             assert isinstance(result, ApproveResult), (
-                f"{fi.drone_id} (priority={fi.priority}) must be approved; got {result}"
+                f"{fi.drone_id} (type={fi.uav_type}, priority={fi.priority}) "
+                f"must be approved; got {result}"
             )
             results[fi.drone_id] = result
             state = create_soft_reservation(
@@ -509,23 +540,39 @@ class TestPriorityBatchSortingAndLaneIsolation:
                 state, config.T_RESPONSE_WINDOW_SEC,
             )
 
-        # ── t_takeoff reflected in waypoint_times ────────────────────────────
-        # The first waypoint arrival = t_dep_star + t_takeoff (not t_dep_star).
-        for drone_id, result in results.items():
+        # ── t_takeoff reflected in waypoint_times (per-FI value) ─────────────
+        # First waypoint arrival = t_dep_star + fi.t_takeoff (varies by UAV type).
+        for fi in batch:
+            result = results[fi.drone_id]
             _, first_wp_time = result.waypoint_times[0]
-            assert first_wp_time == pytest.approx(result.t_dep_star + self.T_TAKEOFF), (
-                f"{drone_id}: waypoint_times[0] should be t_dep_star + t_takeoff "
-                f"({result.t_dep_star} + {self.T_TAKEOFF}), got {first_wp_time}"
+            assert first_wp_time == pytest.approx(result.t_dep_star + fi.t_takeoff), (
+                f"{fi.drone_id} (type {fi.uav_type}): waypoint_times[0] should be "
+                f"t_dep_star + t_takeoff ({result.t_dep_star} + {fi.t_takeoff}), "
+                f"got {first_wp_time}"
             )
 
-        # ── t_land_estimated reflected in t_land_assigned ────────────────────
-        # t_land_assigned = t_dep_star + T_TAKEOFF + FLIGHT_TIME + T_LAND_EST
-        for drone_id, result in results.items():
-            expected_land = result.t_dep_star + self.TOTAL_FLIGHT
+        # ── t_land_estimated reflected in t_land_assigned (per-FI value) ─────
+        # t_land_assigned = t_dep_star + block_time (unique per UAV type).
+        for fi in batch:
+            result = results[fi.drone_id]
+            expected_land = result.t_dep_star + _fi_block_time(fi)
             assert result.t_land_assigned == pytest.approx(expected_land), (
-                f"{drone_id}: t_land_assigned {result.t_land_assigned} "
-                f"!= t_dep_star + total_flight ({expected_land})"
+                f"{fi.drone_id} (type {fi.uav_type}): t_land_assigned "
+                f"{result.t_land_assigned} != t_dep_star + block_time ({expected_land})"
             )
+
+        # ── Block times must differ across UAV types ──────────────────────────
+        block_times = {uav: _fi_block_time(next(fi for fi in batch if fi.uav_type == uav))
+                       for uav in {"A", "B", "C"}}
+        assert block_times["A"] != pytest.approx(block_times["B"]), (
+            "Type A and B must have different block times"
+        )
+        assert block_times["A"] != pytest.approx(block_times["C"]), (
+            "Type A and C must have different block times"
+        )
+        assert block_times["B"] != pytest.approx(block_times["C"]), (
+            "Type B and C must have different block times"
+        )
 
         # ── t_dep_star must not be earlier than t_des ────────────────────────
         for fi in batch:
@@ -537,7 +584,8 @@ class TestPriorityBatchSortingAndLaneIsolation:
         #
         # Re-run lane-B FIs in a pristine state (no lane-A plans present).
         # Because lanes share no waypoints and route to separate vertiports,
-        # the t_dep_star values must be identical to the full-batch results.
+        # the t_dep_star values must be identical to the full-batch results
+        # regardless of what UAV types were used in lane A.
         vp_a_iso = make_vertiport(n_slots=500, slot_duration=30.0, vertiport_id="vp_a")
         vp_b_iso = make_vertiport(n_slots=500, slot_duration=30.0, vertiport_id="vp_b")
         state_iso = make_system_state(
@@ -564,18 +612,19 @@ class TestPriorityBatchSortingAndLaneIsolation:
         )
         assert isinstance(res_b_norm_iso, ApproveResult)
 
-        # Lane-A FIs (including the emergency one) must not shift lane-B t_dep_star.
+        # Lane-A FIs (different UAV types and priorities) must not shift
+        # lane-B t_dep_star, because there are no shared waypoints or slots.
         assert results["drone_b_emerg"].t_dep_star == pytest.approx(
             res_b_emerg_iso.t_dep_star
         ), (
-            f"Lane-A FIs altered drone_b_emerg t_dep_star: "
+            f"Lane-A FIs altered drone_b_emerg (type C) t_dep_star: "
             f"full={results['drone_b_emerg'].t_dep_star}, "
             f"isolated={res_b_emerg_iso.t_dep_star}"
         )
         assert results["drone_b_norm"].t_dep_star == pytest.approx(
             res_b_norm_iso.t_dep_star
         ), (
-            f"Lane-A FIs altered drone_b_norm t_dep_star: "
+            f"Lane-A FIs altered drone_b_norm (type B) t_dep_star: "
             f"full={results['drone_b_norm'].t_dep_star}, "
             f"isolated={res_b_norm_iso.t_dep_star}"
         )
