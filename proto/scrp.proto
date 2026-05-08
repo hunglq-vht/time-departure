@@ -25,47 +25,30 @@ message LaneProto {
   repeated SegmentProto segments = 3;
 }
 
-// ---------- Operator flight request (what the operator knows) ----------
+// ---------- Operator flight request ----------
+// Everything the operator knows: their identity, the drone they are flying
+// (including its specs), the intended flight path, and the desired schedule.
+// The MSD matrix is NOT included — the algorithm maintains that separately.
 
 message OperatorFlightRequestProto {
+  // Operator / drone identity
   string operator_id = 1;
   string drone_id = 2;
+  // Flight path
   LaneProto lane = 3;
-  repeated double v_waypoints = 4;
+  repeated double v_waypoints = 4;          // velocity entering each segment
   string destination_vertiport_id = 5;
-  double t_des = 6;
-  int32 priority = 7;
-}
-
-// ---------- Drone specification (hardware/telemetry known to the system) ----------
-
-message DroneSpecProto {
-  string drone_id = 1;
-  string uav_type = 2;
-  double soc_0 = 3;
-  double c_bat = 4;
-  double p_hover = 5;
-  // Optional fields — 0.0 means "not provided"
-  double t_takeoff = 6;
-  double t_land_estimated = 7;
-}
-
-// ---------- Internal flight intention (merged from operator request + drone spec) ----------
-
-message FlightIntentionProto {
-  string drone_id = 1;
-  string uav_type = 2;
-  LaneProto lane = 3;
-  repeated double v_waypoints = 4;
-  double t_des = 5;
-  double soc_0 = 6;
-  double c_bat = 7;
-  double p_hover = 8;
-  int32 priority = 9;
-  string operator_id = 10;
-  // Optional fields — 0.0 means "not provided"
-  double t_takeoff = 11;
-  double t_land_estimated = 12;
+  // Schedule
+  double t_des = 6;                         // desired departure time [s Unix]
+  int32 priority = 7;                       // 1 | 2 | 3  (1 = highest)
+  // Drone specification — submitted by the operator alongside the request
+  string uav_type = 8;                      // 'A' | 'B' | 'C'
+  double soc_0 = 9;                         // state of charge [0..1]
+  double c_bat = 10;                        // battery capacity [Wh]
+  double p_hover = 11;                      // hover power [W]
+  // Optional timing overrides — 0.0 means "not provided"
+  double t_takeoff = 12;
+  double t_land_estimated = 13;
 }
 
 // ---------- Approved plans ----------
@@ -184,7 +167,6 @@ message ResolveConflictRequest {
   VertiportStateProto vertiport_state = 3;
   SystemStateProto system_state = 4;
   SCRPConfigProto config = 5;
-  DroneSpecProto drone_spec = 6;
 }
 
 message ResolveConflictResponse {

@@ -30,10 +30,9 @@ import pytest
 from scrp.batch_listener import BatchListener
 from scrp.grpc_server import (
     _approve_result_to_proto,
-    _drone_spec_from_proto,
-    _merge_to_flight_intention,
     _operator_fi_from_proto,
     _reject_result_to_proto,
+    _to_flight_intention,
 )
 from scrp.models import (
     ApproveResult,
@@ -95,8 +94,8 @@ def _fi_proto(
     soc_0: float = 1.0,
     c_bat: float = 1000.0,
     p_hover: float = 500.0,
-) -> tuple[scrp_pb2.OperatorFlightRequestProto, scrp_pb2.DroneSpecProto]:
-    fi = scrp_pb2.OperatorFlightRequestProto(
+) -> scrp_pb2.OperatorFlightRequestProto:
+    return scrp_pb2.OperatorFlightRequestProto(
         operator_id=operator_id,
         drone_id=drone_id,
         lane=lane,
@@ -104,15 +103,11 @@ def _fi_proto(
         destination_vertiport_id="vp1",
         t_des=t_des,
         priority=priority,
-    )
-    spec = scrp_pb2.DroneSpecProto(
-        drone_id=drone_id,
         uav_type=uav_type,
         soc_0=soc_0,
         c_bat=c_bat,
         p_hover=p_hover,
     )
-    return fi, spec
 
 
 # ---------------------------------------------------------------------------
@@ -227,9 +222,7 @@ class BatchedSCRPServicer(scrp_pb2_grpc.SCRPServiceServicer):
         context: grpc.ServicerContext,
     ) -> scrp_pb2.ResolveConflictResponse:
         try:
-            fi_req = _operator_fi_from_proto(request.fi)
-            drone_spec = _drone_spec_from_proto(request.drone_spec)
-            fi = _merge_to_flight_intention(fi_req, drone_spec)
+            fi = _to_flight_intention(_operator_fi_from_proto(request.fi))
 
             # Set destination vertiport when operator did not specify one explicitly
             if not fi.lane.destination_vertiport_id and self._system_state.vertiports:
@@ -412,7 +405,7 @@ class TestMultiOperatorBatch:
         print("-" * 72)
 
         def send(drone_id, operator_id, lane, priority, uav_type, t_des):
-            fi, drone_spec = _fi_proto(
+            fi = _fi_proto(
                 drone_id=drone_id,
                 operator_id=operator_id,
                 lane=lane,
@@ -420,7 +413,7 @@ class TestMultiOperatorBatch:
                 priority=priority,
                 uav_type=uav_type,
             )
-            req = scrp_pb2.ResolveConflictRequest(fi=fi, drone_spec=drone_spec)
+            req = scrp_pb2.ResolveConflictRequest(fi=fi)
             try:
                 resp = stub.ResolveConflict(req, timeout=35.0)
                 with lock:
@@ -470,7 +463,7 @@ class TestMultiOperatorBatch:
         lock = threading.Lock()
 
         def send(drone_id, operator_id, lane, priority, uav_type, t_des):
-            fi, drone_spec = _fi_proto(
+            fi = _fi_proto(
                 drone_id=drone_id,
                 operator_id=operator_id,
                 lane=lane,
@@ -478,7 +471,7 @@ class TestMultiOperatorBatch:
                 priority=priority,
                 uav_type=uav_type,
             )
-            req = scrp_pb2.ResolveConflictRequest(fi=fi, drone_spec=drone_spec)
+            req = scrp_pb2.ResolveConflictRequest(fi=fi)
             try:
                 resp = stub.ResolveConflict(req, timeout=35.0)
                 with lock:
@@ -523,7 +516,7 @@ class TestMultiOperatorBatch:
         lock = threading.Lock()
 
         def send(drone_id, operator_id, lane, priority, uav_type, t_des):
-            fi, drone_spec = _fi_proto(
+            fi = _fi_proto(
                 drone_id=drone_id,
                 operator_id=operator_id,
                 lane=lane,
@@ -531,7 +524,7 @@ class TestMultiOperatorBatch:
                 priority=priority,
                 uav_type=uav_type,
             )
-            req = scrp_pb2.ResolveConflictRequest(fi=fi, drone_spec=drone_spec)
+            req = scrp_pb2.ResolveConflictRequest(fi=fi)
             try:
                 resp = stub.ResolveConflict(req, timeout=35.0)
                 with lock:

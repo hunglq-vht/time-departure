@@ -13,7 +13,6 @@ from scrp.proto import scrp_pb2, scrp_pb2_grpc
 from .models import (
     ApprovedPlan,
     ApproveResult,
-    DroneSpec,
     FlightIntention,
     Lane,
     OperatorFlightRequest,
@@ -64,12 +63,6 @@ def _operator_fi_from_proto(p: scrp_pb2.OperatorFlightRequestProto) -> OperatorF
         destination_vertiport_id=p.destination_vertiport_id,
         t_des=p.t_des,
         priority=p.priority,
-    )
-
-
-def _drone_spec_from_proto(p: scrp_pb2.DroneSpecProto) -> DroneSpec:
-    return DroneSpec(
-        drone_id=p.drone_id,
         uav_type=p.uav_type,
         SoC_0=p.soc_0,
         C_bat=p.c_bat,
@@ -79,23 +72,20 @@ def _drone_spec_from_proto(p: scrp_pb2.DroneSpecProto) -> DroneSpec:
     )
 
 
-def _merge_to_flight_intention(
-    fi_req: OperatorFlightRequest,
-    drone_spec: DroneSpec,
-) -> FlightIntention:
+def _to_flight_intention(req: OperatorFlightRequest) -> FlightIntention:
     return FlightIntention(
-        drone_id=fi_req.drone_id,
-        uav_type=drone_spec.uav_type,
-        lane=fi_req.lane,
-        v_waypoints=fi_req.v_waypoints,
-        t_des=fi_req.t_des,
-        SoC_0=drone_spec.SoC_0,
-        C_bat=drone_spec.C_bat,
-        P_hover=drone_spec.P_hover,
-        priority=fi_req.priority,
-        operator_id=fi_req.operator_id,
-        t_takeoff=drone_spec.t_takeoff,
-        t_land_estimated=drone_spec.t_land_estimated,
+        drone_id=req.drone_id,
+        uav_type=req.uav_type,
+        lane=req.lane,
+        v_waypoints=req.v_waypoints,
+        t_des=req.t_des,
+        SoC_0=req.SoC_0,
+        C_bat=req.C_bat,
+        P_hover=req.P_hover,
+        priority=req.priority,
+        operator_id=req.operator_id,
+        t_takeoff=req.t_takeoff,
+        t_land_estimated=req.t_land_estimated,
     )
 
 
@@ -224,9 +214,7 @@ class SCRPServicer(scrp_pb2_grpc.SCRPServiceServicer):
         context: grpc.ServicerContext,
     ) -> scrp_pb2.ResolveConflictResponse:
         try:
-            fi_req = _operator_fi_from_proto(request.fi)
-            drone_spec = _drone_spec_from_proto(request.drone_spec)
-            fi = _merge_to_flight_intention(fi_req, drone_spec)
+            fi = _to_flight_intention(_operator_fi_from_proto(request.fi))
             system_state = _system_state_from_proto(request.system_state)
             config = _config_from_proto(request.config)
 
