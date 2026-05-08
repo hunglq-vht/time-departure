@@ -1,6 +1,8 @@
 """Shared fixtures for all SCRP tests."""
 from __future__ import annotations
 
+from typing import Optional
+
 import pytest
 
 from scrp.models import (
@@ -55,6 +57,9 @@ def make_fi(
     drone_id: str = "drone_new",
     uav_type: str = "A",
     operator_id: str = "op1",
+    priority: int = 1,
+    t_takeoff: Optional[float] = None,
+    t_land_estimated: Optional[float] = None,
 ) -> FlightIntention:
     v_waypoints = [v] * len(lane.waypoints)
     return FlightIntention(
@@ -66,8 +71,10 @@ def make_fi(
         SoC_0=SoC_0,
         C_bat=C_bat,
         P_hover=P_hover,
-        priority=1,
+        priority=priority,
         operator_id=operator_id,
+        t_takeoff=t_takeoff,
+        t_land_estimated=t_land_estimated,
     )
 
 
