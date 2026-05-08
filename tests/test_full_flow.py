@@ -411,3 +411,171 @@ class TestFullFlowWithOperatorLifecycle:
         soft_ids = {p.drone_id for p in final_soft}
         assert committed_ids == {"drone_1", "drone_2", "drone_3"}
         assert soft_ids == {"drone_6", "drone_7"}
+
+
+# ---------------------------------------------------------------------------
+# Suite 3 — Priority sorting, t_takeoff/t_land_estimated, and lane isolation
+# ---------------------------------------------------------------------------
+
+class TestPriorityBatchSortingAndLaneIsolation:
+    """Verify that:
+
+    1. Flight intentions carry t_takeoff and t_land_estimated and both are
+       reflected in waypoint_times and t_land_assigned.
+    2. A batch of mixed-priority FIs is sorted by priority descending
+       (emergency first) before processing.
+    3. Each lane has at least one emergency (priority 3) FI.
+    4. A priority FI in lane A does NOT alter t_dep_star for lane B FIs —
+       only same-lane approved plans and the destination vertiport's slot
+       calendar influence a FI's departure time.
+
+    Scenario (T_TAKEOFF = 5 s, T_LAND_EST = 10 s, V = 10 m/s, 2 × 200 m):
+        total in-air time per flight = t_takeoff + 2*200/10 + t_land_est = 55 s
+
+    Batch (unsorted):
+        drone_a_norm  : lane_a, priority=1, t_des = T_BASE+120
+        drone_b_norm  : lane_b, priority=1, t_des = T_BASE+220
+        drone_a_emerg : lane_a, priority=3, t_des = T_BASE+100  ← emergency
+        drone_b_emerg : lane_b, priority=3, t_des = T_BASE+200  ← emergency
+
+    After priority sort (descending priority, then ascending t_des):
+        1. drone_a_emerg  (priority 3, t_des = T_BASE+100)
+        2. drone_b_emerg  (priority 3, t_des = T_BASE+200)
+        3. drone_a_norm   (priority 1, t_des = T_BASE+120)
+        4. drone_b_norm   (priority 1, t_des = T_BASE+220)
+    """
+
+    # ------------------------------------------------------------------
+    # Constants shared across the test
+    # ------------------------------------------------------------------
+    T_TAKEOFF = 5.0
+    T_LAND_EST = 10.0
+    TOTAL_FLIGHT = T_TAKEOFF + FLIGHT_TIME + T_LAND_EST  # 55 s
+    EMERGENCY = 3
+    NORMAL = 1
+
+    def _build_batch(self, lane_a, lane_b):
+        """Return an *unsorted* list of four FIs (two lanes × two priorities)."""
+        kw = dict(v=V, t_takeoff=self.T_TAKEOFF, t_land_estimated=self.T_LAND_EST)
+        return [
+            make_fi(lane_a, t_des=T_BASE + 120.0, drone_id="drone_a_norm",
+                    operator_id="op_an", priority=self.NORMAL, **kw),
+            make_fi(lane_b, t_des=T_BASE + 220.0, drone_id="drone_b_norm",
+                    operator_id="op_bn", priority=self.NORMAL, **kw),
+            make_fi(lane_a, t_des=T_BASE + 100.0, drone_id="drone_a_emerg",
+                    operator_id="op_ae", priority=self.EMERGENCY, **kw),
+            make_fi(lane_b, t_des=T_BASE + 200.0, drone_id="drone_b_emerg",
+                    operator_id="op_be", priority=self.EMERGENCY, **kw),
+        ]
+
+    def test_priority_sorting_and_lane_isolation(self, config):
+        lane_a, lane_b = _build_lanes()
+        vp_a, vp_b = _build_vertiports()
+
+        batch = self._build_batch(lane_a, lane_b)
+
+        # ── Priority sort: descending priority, then ascending t_des ─────────
+        sorted_batch = sorted(batch, key=lambda fi: (-fi.priority, fi.t_des))
+
+        # Emergency FIs must lead the sorted batch.
+        assert sorted_batch[0].priority == self.EMERGENCY, (
+            "First FI in sorted batch must be emergency"
+        )
+        assert sorted_batch[1].priority == self.EMERGENCY, (
+            "Second FI in sorted batch must be emergency"
+        )
+        assert sorted_batch[2].priority == self.NORMAL
+        assert sorted_batch[3].priority == self.NORMAL
+
+        # Each lane must have at least one emergency FI.
+        emergency_lane_ids = {fi.lane.id for fi in batch if fi.priority == self.EMERGENCY}
+        assert "lane_a" in emergency_lane_ids, "Lane A must have at least one emergency FI"
+        assert "lane_b" in emergency_lane_ids, "Lane B must have at least one emergency FI"
+
+        # ── Process sorted batch ─────────────────────────────────────────────
+        state = make_system_state(
+            vertiports={"vp_a": vp_a, "vp_b": vp_b},
+            t_now=T_BASE,
+        )
+        results: dict[str, ApproveResult] = {}
+        for fi in sorted_batch:
+            result = resolve_conflict(fi, state.approved_plans, state, config)
+            assert isinstance(result, ApproveResult), (
+                f"{fi.drone_id} (priority={fi.priority}) must be approved; got {result}"
+            )
+            results[fi.drone_id] = result
+            state = create_soft_reservation(
+                result, fi.lane, fi.drone_id, fi.uav_type, fi.v_waypoints,
+                state, config.T_RESPONSE_WINDOW_SEC,
+            )
+
+        # ── t_takeoff reflected in waypoint_times ────────────────────────────
+        # The first waypoint arrival = t_dep_star + t_takeoff (not t_dep_star).
+        for drone_id, result in results.items():
+            _, first_wp_time = result.waypoint_times[0]
+            assert first_wp_time == pytest.approx(result.t_dep_star + self.T_TAKEOFF), (
+                f"{drone_id}: waypoint_times[0] should be t_dep_star + t_takeoff "
+                f"({result.t_dep_star} + {self.T_TAKEOFF}), got {first_wp_time}"
+            )
+
+        # ── t_land_estimated reflected in t_land_assigned ────────────────────
+        # t_land_assigned = t_dep_star + T_TAKEOFF + FLIGHT_TIME + T_LAND_EST
+        for drone_id, result in results.items():
+            expected_land = result.t_dep_star + self.TOTAL_FLIGHT
+            assert result.t_land_assigned == pytest.approx(expected_land), (
+                f"{drone_id}: t_land_assigned {result.t_land_assigned} "
+                f"!= t_dep_star + total_flight ({expected_land})"
+            )
+
+        # ── t_dep_star must not be earlier than t_des ────────────────────────
+        for fi in batch:
+            assert results[fi.drone_id].t_dep_star >= fi.t_des - 1e-9, (
+                f"{fi.drone_id}: t_dep_star < t_des"
+            )
+
+        # ── Lane isolation: lane-A FIs must not affect lane-B t_dep_star ─────
+        #
+        # Re-run lane-B FIs in a pristine state (no lane-A plans present).
+        # Because lanes share no waypoints and route to separate vertiports,
+        # the t_dep_star values must be identical to the full-batch results.
+        vp_a_iso = make_vertiport(n_slots=500, slot_duration=30.0, vertiport_id="vp_a")
+        vp_b_iso = make_vertiport(n_slots=500, slot_duration=30.0, vertiport_id="vp_b")
+        state_iso = make_system_state(
+            vertiports={"vp_a": vp_a_iso, "vp_b": vp_b_iso},
+            t_now=T_BASE,
+        )
+
+        fi_b_emerg = next(fi for fi in batch if fi.drone_id == "drone_b_emerg")
+        fi_b_norm = next(fi for fi in batch if fi.drone_id == "drone_b_norm")
+
+        # Process lane-B emergency then lane-B normal in isolation.
+        res_b_emerg_iso = resolve_conflict(
+            fi_b_emerg, state_iso.approved_plans, state_iso, config
+        )
+        assert isinstance(res_b_emerg_iso, ApproveResult)
+        state_iso = create_soft_reservation(
+            res_b_emerg_iso, fi_b_emerg.lane, fi_b_emerg.drone_id,
+            fi_b_emerg.uav_type, fi_b_emerg.v_waypoints,
+            state_iso, config.T_RESPONSE_WINDOW_SEC,
+        )
+
+        res_b_norm_iso = resolve_conflict(
+            fi_b_norm, state_iso.approved_plans, state_iso, config
+        )
+        assert isinstance(res_b_norm_iso, ApproveResult)
+
+        # Lane-A FIs (including the emergency one) must not shift lane-B t_dep_star.
+        assert results["drone_b_emerg"].t_dep_star == pytest.approx(
+            res_b_emerg_iso.t_dep_star
+        ), (
+            f"Lane-A FIs altered drone_b_emerg t_dep_star: "
+            f"full={results['drone_b_emerg'].t_dep_star}, "
+            f"isolated={res_b_emerg_iso.t_dep_star}"
+        )
+        assert results["drone_b_norm"].t_dep_star == pytest.approx(
+            res_b_norm_iso.t_dep_star
+        ), (
+            f"Lane-A FIs altered drone_b_norm t_dep_star: "
+            f"full={results['drone_b_norm'].t_dep_star}, "
+            f"isolated={res_b_norm_iso.t_dep_star}"
+        )
