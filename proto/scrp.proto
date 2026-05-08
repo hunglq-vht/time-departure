@@ -25,7 +25,32 @@ message LaneProto {
   repeated SegmentProto segments = 3;
 }
 
-// ---------- Flight intention ----------
+// ---------- Operator flight request (what the operator knows) ----------
+
+message OperatorFlightRequestProto {
+  string operator_id = 1;
+  string drone_id = 2;
+  LaneProto lane = 3;
+  repeated double v_waypoints = 4;
+  string destination_vertiport_id = 5;
+  double t_des = 6;
+  int32 priority = 7;
+}
+
+// ---------- Drone specification (hardware/telemetry known to the system) ----------
+
+message DroneSpecProto {
+  string drone_id = 1;
+  string uav_type = 2;
+  double soc_0 = 3;
+  double c_bat = 4;
+  double p_hover = 5;
+  // Optional fields — 0.0 means "not provided"
+  double t_takeoff = 6;
+  double t_land_estimated = 7;
+}
+
+// ---------- Internal flight intention (merged from operator request + drone spec) ----------
 
 message FlightIntentionProto {
   string drone_id = 1;
@@ -154,11 +179,12 @@ message RejectResultProto {
 // ---------- RPC messages ----------
 
 message ResolveConflictRequest {
-  FlightIntentionProto fi = 1;
+  OperatorFlightRequestProto fi = 1;
   repeated ApprovedPlanProto approved_plans = 2;
   VertiportStateProto vertiport_state = 3;
   SystemStateProto system_state = 4;
   SCRPConfigProto config = 5;
+  DroneSpecProto drone_spec = 6;
 }
 
 message ResolveConflictResponse {

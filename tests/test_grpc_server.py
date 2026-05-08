@@ -51,22 +51,33 @@ def _fi(
     drone_id: str = "drone_new",
     v: float = 10.0,
     t_des: float = 1000.0,
+    uav_type: str = "A",
+) -> scrp_pb2.OperatorFlightRequestProto:
+    return scrp_pb2.OperatorFlightRequestProto(
+        operator_id="op1",
+        drone_id=drone_id,
+        lane=lane,
+        v_waypoints=[v] * len(lane.waypoints),
+        destination_vertiport_id="vp1",
+        t_des=t_des,
+        priority=1,
+    )
+
+
+def _drone_spec(
+    drone_id: str = "drone_new",
+    *,
+    uav_type: str = "A",
     soc_0: float = 1.0,
     c_bat: float = 1000.0,
     p_hover: float = 500.0,
-    uav_type: str = "A",
-) -> scrp_pb2.FlightIntentionProto:
-    return scrp_pb2.FlightIntentionProto(
+) -> scrp_pb2.DroneSpecProto:
+    return scrp_pb2.DroneSpecProto(
         drone_id=drone_id,
         uav_type=uav_type,
-        lane=lane,
-        v_waypoints=[v] * len(lane.waypoints),
-        t_des=t_des,
         soc_0=soc_0,
         c_bat=c_bat,
         p_hover=p_hover,
-        priority=1,
-        operator_id="op1",
     )
 
 
@@ -151,6 +162,7 @@ class TestGrpcResolveConflict:
         lane = _simple_lane()
         request = scrp_pb2.ResolveConflictRequest(
             fi=_fi(lane),
+            drone_spec=_drone_spec(),
             approved_plans=[],
             vertiport_state=_vertiport(),
             system_state=_system_state(),
@@ -167,6 +179,7 @@ class TestGrpcResolveConflict:
         lane = _simple_lane()
         request = scrp_pb2.ResolveConflictRequest(
             fi=_fi(lane),
+            drone_spec=_drone_spec(),
             approved_plans=[],
             vertiport_state=_vertiport(),
             system_state=_system_state(),
@@ -182,7 +195,8 @@ class TestGrpcResolveConflict:
     def test_soc_insufficient_returns_reject(self, grpc_stub):
         lane = _simple_lane()
         request = scrp_pb2.ResolveConflictRequest(
-            fi=_fi(lane, soc_0=0.001, c_bat=1.0),
+            fi=_fi(lane),
+            drone_spec=_drone_spec(soc_0=0.001, c_bat=1.0),
             approved_plans=[],
             vertiport_state=_vertiport(),
             system_state=_system_state(),
@@ -196,20 +210,18 @@ class TestGrpcResolveConflict:
     def test_invalid_fi_returns_reject(self, grpc_stub):
         lane = _simple_lane()
         # Mismatched v_waypoints length triggers invalid_fi
-        bad_fi = scrp_pb2.FlightIntentionProto(
+        bad_fi = scrp_pb2.OperatorFlightRequestProto(
+            operator_id="op1",
             drone_id="drone_bad",
-            uav_type="A",
             lane=lane,
             v_waypoints=[10.0],  # wrong length (lane has 3 waypoints)
+            destination_vertiport_id="vp1",
             t_des=1000.0,
-            soc_0=1.0,
-            c_bat=1000.0,
-            p_hover=500.0,
             priority=1,
-            operator_id="op1",
         )
         request = scrp_pb2.ResolveConflictRequest(
             fi=bad_fi,
+            drone_spec=_drone_spec(drone_id="drone_bad"),
             approved_plans=[],
             vertiport_state=_vertiport(),
             system_state=_system_state(),
@@ -222,7 +234,8 @@ class TestGrpcResolveConflict:
     def test_approve_soc_and_energy_populated(self, grpc_stub):
         lane = _simple_lane()
         request = scrp_pb2.ResolveConflictRequest(
-            fi=_fi(lane, soc_0=1.0, c_bat=1000.0, p_hover=500.0),
+            fi=_fi(lane),
+            drone_spec=_drone_spec(soc_0=1.0, c_bat=1000.0, p_hover=500.0),
             approved_plans=[],
             vertiport_state=_vertiport(),
             system_state=_system_state(),
@@ -262,6 +275,7 @@ class TestGrpcResolveConflict:
         )
         request = scrp_pb2.ResolveConflictRequest(
             fi=_fi(lane),
+            drone_spec=_drone_spec(),
             approved_plans=[existing_plan],
             vertiport_state=_vertiport(),
             system_state=_system_state(approved_plans=[existing_plan]),

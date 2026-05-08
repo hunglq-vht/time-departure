@@ -13,8 +13,10 @@ from scrp.proto import scrp_pb2, scrp_pb2_grpc
 from .models import (
     ApprovedPlan,
     ApproveResult,
+    DroneSpec,
     FlightIntention,
     Lane,
+    OperatorFlightRequest,
     Pad,
     RejectResult,
     SCRPConfig,
@@ -51,20 +53,49 @@ def _lane_from_proto(p: scrp_pb2.LaneProto) -> Lane:
     return lane
 
 
-def _fi_from_proto(p: scrp_pb2.FlightIntentionProto) -> FlightIntention:
-    return FlightIntention(
+def _operator_fi_from_proto(p: scrp_pb2.OperatorFlightRequestProto) -> OperatorFlightRequest:
+    lane = _lane_from_proto(p.lane)
+    lane.destination_vertiport_id = p.destination_vertiport_id
+    return OperatorFlightRequest(
+        operator_id=p.operator_id,
+        drone_id=p.drone_id,
+        lane=lane,
+        v_waypoints=list(p.v_waypoints),
+        destination_vertiport_id=p.destination_vertiport_id,
+        t_des=p.t_des,
+        priority=p.priority,
+    )
+
+
+def _drone_spec_from_proto(p: scrp_pb2.DroneSpecProto) -> DroneSpec:
+    return DroneSpec(
         drone_id=p.drone_id,
         uav_type=p.uav_type,
-        lane=_lane_from_proto(p.lane),
-        v_waypoints=list(p.v_waypoints),
-        t_des=p.t_des,
         SoC_0=p.soc_0,
         C_bat=p.c_bat,
         P_hover=p.p_hover,
-        priority=p.priority,
-        operator_id=p.operator_id,
         t_takeoff=p.t_takeoff if p.t_takeoff != 0.0 else None,
         t_land_estimated=p.t_land_estimated if p.t_land_estimated != 0.0 else None,
+    )
+
+
+def _merge_to_flight_intention(
+    fi_req: OperatorFlightRequest,
+    drone_spec: DroneSpec,
+) -> FlightIntention:
+    return FlightIntention(
+        drone_id=fi_req.drone_id,
+        uav_type=drone_spec.uav_type,
+        lane=fi_req.lane,
+        v_waypoints=fi_req.v_waypoints,
+        t_des=fi_req.t_des,
+        SoC_0=drone_spec.SoC_0,
+        C_bat=drone_spec.C_bat,
+        P_hover=drone_spec.P_hover,
+        priority=fi_req.priority,
+        operator_id=fi_req.operator_id,
+        t_takeoff=drone_spec.t_takeoff,
+        t_land_estimated=drone_spec.t_land_estimated,
     )
 
 
@@ -193,11 +224,13 @@ class SCRPServicer(scrp_pb2_grpc.SCRPServiceServicer):
         context: grpc.ServicerContext,
     ) -> scrp_pb2.ResolveConflictResponse:
         try:
-            fi = _fi_from_proto(request.fi)
+            fi_req = _operator_fi_from_proto(request.fi)
+            drone_spec = _drone_spec_from_proto(request.drone_spec)
+            fi = _merge_to_flight_intention(fi_req, drone_spec)
             system_state = _system_state_from_proto(request.system_state)
             config = _config_from_proto(request.config)
 
-            # Infer destination vertiport for lanes that don't carry it explicitly
+            # Infer destination vertiport when operator did not specify one explicitly
             if not fi.lane.destination_vertiport_id and system_state.vertiports:
                 fi.lane.destination_vertiport_id = next(iter(system_state.vertiports))
 

@@ -41,6 +41,30 @@ class Lane:
 
 
 @dataclass
+class OperatorFlightRequest:
+    """What an operator submits: flight path, velocities, and destination vertiport."""
+    operator_id: str
+    drone_id: str
+    lane: Lane
+    v_waypoints: List[float]
+    destination_vertiport_id: str
+    t_des: float
+    priority: int
+
+
+@dataclass
+class DroneSpec:
+    """Drone hardware/telemetry properties known to the system, not the operator."""
+    drone_id: str
+    uav_type: str           # 'A' | 'B' | 'C'
+    SoC_0: float            # state of charge [0..1]
+    C_bat: float            # battery capacity [Wh]
+    P_hover: float          # hover power [W]
+    t_takeoff: Optional[float] = None       # takeoff phase duration [s]
+    t_land_estimated: Optional[float] = None  # landing phase duration [s]
+
+
+@dataclass
 class FlightIntention:
     drone_id: str
     uav_type: str           # 'A' | 'B' | 'C'
