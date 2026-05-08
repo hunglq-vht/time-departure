@@ -41,6 +41,32 @@ class Lane:
 
 
 @dataclass
+class OperatorFlightRequest:
+    """What an operator submits: identity, flight path, schedule, and drone spec.
+
+    The operator supplies all drone hardware properties themselves.
+    The only information NOT present here is the MSD matrix, which the
+    algorithm maintains independently for all known UAV types.
+    """
+    operator_id: str
+    drone_id: str
+    # Flight path
+    lane: Lane
+    v_waypoints: List[float]          # velocity entering each segment
+    destination_vertiport_id: str
+    # Schedule
+    t_des: float                      # desired departure time [s Unix]
+    priority: int                     # 1 | 2 | 3  (1 = highest)
+    # Drone specification submitted by the operator
+    uav_type: str                     # 'A' | 'B' | 'C'
+    SoC_0: float                      # state of charge [0..1]
+    C_bat: float                      # battery capacity [Wh]
+    P_hover: float                    # hover power [W]
+    t_takeoff: Optional[float] = None        # takeoff phase duration [s]
+    t_land_estimated: Optional[float] = None # landing phase duration [s]
+
+
+@dataclass
 class FlightIntention:
     drone_id: str
     uav_type: str           # 'A' | 'B' | 'C'

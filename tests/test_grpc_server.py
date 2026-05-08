@@ -51,22 +51,23 @@ def _fi(
     drone_id: str = "drone_new",
     v: float = 10.0,
     t_des: float = 1000.0,
+    uav_type: str = "A",
     soc_0: float = 1.0,
     c_bat: float = 1000.0,
     p_hover: float = 500.0,
-    uav_type: str = "A",
-) -> scrp_pb2.FlightIntentionProto:
-    return scrp_pb2.FlightIntentionProto(
+) -> scrp_pb2.OperatorFlightRequestProto:
+    return scrp_pb2.OperatorFlightRequestProto(
+        operator_id="op1",
         drone_id=drone_id,
-        uav_type=uav_type,
         lane=lane,
         v_waypoints=[v] * len(lane.waypoints),
+        destination_vertiport_id="vp1",
         t_des=t_des,
+        priority=1,
+        uav_type=uav_type,
         soc_0=soc_0,
         c_bat=c_bat,
         p_hover=p_hover,
-        priority=1,
-        operator_id="op1",
     )
 
 
@@ -196,17 +197,18 @@ class TestGrpcResolveConflict:
     def test_invalid_fi_returns_reject(self, grpc_stub):
         lane = _simple_lane()
         # Mismatched v_waypoints length triggers invalid_fi
-        bad_fi = scrp_pb2.FlightIntentionProto(
+        bad_fi = scrp_pb2.OperatorFlightRequestProto(
+            operator_id="op1",
             drone_id="drone_bad",
-            uav_type="A",
             lane=lane,
             v_waypoints=[10.0],  # wrong length (lane has 3 waypoints)
+            destination_vertiport_id="vp1",
             t_des=1000.0,
+            priority=1,
+            uav_type="A",
             soc_0=1.0,
             c_bat=1000.0,
             p_hover=500.0,
-            priority=1,
-            operator_id="op1",
         )
         request = scrp_pb2.ResolveConflictRequest(
             fi=bad_fi,

@@ -15,6 +15,7 @@ from .models import (
     ApproveResult,
     FlightIntention,
     Lane,
+    OperatorFlightRequest,
     Pad,
     RejectResult,
     SCRPConfig,
@@ -51,20 +52,40 @@ def _lane_from_proto(p: scrp_pb2.LaneProto) -> Lane:
     return lane
 
 
-def _fi_from_proto(p: scrp_pb2.FlightIntentionProto) -> FlightIntention:
-    return FlightIntention(
+def _operator_fi_from_proto(p: scrp_pb2.OperatorFlightRequestProto) -> OperatorFlightRequest:
+    lane = _lane_from_proto(p.lane)
+    lane.destination_vertiport_id = p.destination_vertiport_id
+    return OperatorFlightRequest(
+        operator_id=p.operator_id,
         drone_id=p.drone_id,
-        uav_type=p.uav_type,
-        lane=_lane_from_proto(p.lane),
+        lane=lane,
         v_waypoints=list(p.v_waypoints),
+        destination_vertiport_id=p.destination_vertiport_id,
         t_des=p.t_des,
+        priority=p.priority,
+        uav_type=p.uav_type,
         SoC_0=p.soc_0,
         C_bat=p.c_bat,
         P_hover=p.p_hover,
-        priority=p.priority,
-        operator_id=p.operator_id,
         t_takeoff=p.t_takeoff if p.t_takeoff != 0.0 else None,
         t_land_estimated=p.t_land_estimated if p.t_land_estimated != 0.0 else None,
+    )
+
+
+def _to_flight_intention(req: OperatorFlightRequest) -> FlightIntention:
+    return FlightIntention(
+        drone_id=req.drone_id,
+        uav_type=req.uav_type,
+        lane=req.lane,
+        v_waypoints=req.v_waypoints,
+        t_des=req.t_des,
+        SoC_0=req.SoC_0,
+        C_bat=req.C_bat,
+        P_hover=req.P_hover,
+        priority=req.priority,
+        operator_id=req.operator_id,
+        t_takeoff=req.t_takeoff,
+        t_land_estimated=req.t_land_estimated,
     )
 
 
@@ -193,11 +214,11 @@ class SCRPServicer(scrp_pb2_grpc.SCRPServiceServicer):
         context: grpc.ServicerContext,
     ) -> scrp_pb2.ResolveConflictResponse:
         try:
-            fi = _fi_from_proto(request.fi)
+            fi = _to_flight_intention(_operator_fi_from_proto(request.fi))
             system_state = _system_state_from_proto(request.system_state)
             config = _config_from_proto(request.config)
 
-            # Infer destination vertiport for lanes that don't carry it explicitly
+            # Infer destination vertiport when operator did not specify one explicitly
             if not fi.lane.destination_vertiport_id and system_state.vertiports:
                 fi.lane.destination_vertiport_id = next(iter(system_state.vertiports))
 
