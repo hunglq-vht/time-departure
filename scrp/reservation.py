@@ -16,6 +16,9 @@ def create_soft_reservation(
     state: SystemState,
     t_response_window: float,
     algorithm: str = 'SCRP',
+    fi_origin_vertiport_id: str = "",
+    fi_takeoff_pad_id: str = "",
+    fi_t_takeoff: Optional[float] = None,
 ) -> SystemState:
     """Create a SOFT_RESERVED plan and mark the slot. Returns mutated state copy."""
     new_state = copy.deepcopy(state)
@@ -42,6 +45,9 @@ def create_soft_reservation(
         algorithm=algorithm,
         expires_at=result.expires_at,
         vertiport_id=vertiport_id,
+        origin_vertiport_id=fi_origin_vertiport_id,
+        takeoff_pad_id=fi_takeoff_pad_id,
+        t_takeoff=fi_t_takeoff,
     )
     new_state.approved_plans.append(plan)
 

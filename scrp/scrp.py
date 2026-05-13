@@ -18,6 +18,7 @@ from .models import (
     SystemState,
 )
 from .slot import find_earliest_slot, slot_start_time
+from .takeoff import compute_delta_C0
 
 
 def _validate_fi(fi: FlightIntention) -> Optional[str]:
@@ -42,6 +43,7 @@ def _validate_fi(fi: FlightIntention) -> Optional[str]:
 
 
 def _determine_delay_source(
+    delta_C0: float,
     delta_C1: float,
     delta_C2: float,
     delta_C3: float,
@@ -55,6 +57,8 @@ def _determine_delay_source(
         return 'C2_junction'
     if delta_C1 >= delay_total:
         return 'C1_headway'
+    if delta_C0 >= delay_total:
+        return 'C0_takeoff'
     return 'none'
 
 
@@ -91,16 +95,29 @@ def resolve_conflict(
 
     t_des = fi.t_des
 
-    # Step 2 — Delta_C1 (headway)
+    # Step 2 — Delta_C0 (takeoff separation at origin vertiport).
+    # Computed iteratively: each round uses the current best departure estimate so
+    # that cascaded dependencies across multiple approved plans are resolved correctly.
+    delta_C0 = 0.0
+    _t_dep_c0 = t_des
+    for _ in range(20):  # converges in at most O(len(approved_plans)) rounds
+        delta_C0_new = compute_delta_C0(fi, approved_plans, _t_dep_c0, t_des, system_state)
+        _t_dep_new = t_des + delta_C0_new
+        if _t_dep_new <= _t_dep_c0 + 1e-9:
+            delta_C0 = delta_C0_new
+            break
+        _t_dep_c0 = _t_dep_new
+
+    # Step 3 — Delta_C1 (headway on shared lane segments)
     delta_C1 = compute_delta_C1(fi, approved_plans, t_des, system_state)
 
-    # Step 3 — Delta_C2 (junction)
+    # Step 4 — Delta_C2 (junction conflicts)
     delta_C2 = compute_delta_C2(fi, approved_plans, t_des, system_state, config)
 
-    # Step 4 — Preliminary t_dep
-    t_dep_prelim = t_des + max(0.0, delta_C1, delta_C2)
+    # Step 5 — Preliminary t_dep
+    t_dep_prelim = t_des + max(0.0, delta_C0, delta_C1, delta_C2)
 
-    # Step 5 — Delta_C3 (landing slot)
+    # Step 6 — Delta_C3 (landing slot)
     t_land_prelim = t_land(fi, t_dep_prelim)
     slot_key, delta_C3 = find_earliest_slot(
         t_land_desired=t_land_prelim,
@@ -118,10 +135,10 @@ def resolve_conflict(
             detail='No compatible landing slot found within search window',
         )
 
-    # Step 6 — Final t_dep*
-    delay_total = max(0.0, delta_C1, delta_C2, delta_C3)
+    # Step 7 — Final t_dep*
+    delay_total = max(0.0, delta_C0, delta_C1, delta_C2, delta_C3)
     t_dep_star = t_des + delay_total
-    delay_source = _determine_delay_source(delta_C1, delta_C2, delta_C3, delay_total)
+    delay_source = _determine_delay_source(delta_C0, delta_C1, delta_C2, delta_C3, delay_total)
 
     # Reject if delay exceeds maximum acceptable
     if delay_total > config.MAX_ACCEPTABLE_DELAY_SEC:
@@ -132,7 +149,7 @@ def resolve_conflict(
             detail=f'Required delay {delay_total:.1f}s exceeds maximum {config.MAX_ACCEPTABLE_DELAY_SEC:.1f}s',
         )
 
-    # Re-find slot for the final t_dep (slot may shift)
+    # Step 8 — Re-find slot for the final t_dep (slot may shift)
     t_land_final = t_land(fi, t_dep_star)
     slot_key, _ = find_earliest_slot(
         t_land_desired=t_land_final,
@@ -152,7 +169,7 @@ def resolve_conflict(
     pad_id, slot_index = slot_key
     t_slot_start = slot_start_time(slot_index, 0.0, vertiport_state.slot_duration)
 
-    # Step 7 — SoC check (C4)
+    # Step 9 — SoC check (C4)
     E_cruise = compute_E_cruise(fi, config)
     SoC_remaining = compute_SoC_remaining(fi, t_dep_star, t_slot_start, E_cruise)
 
@@ -167,7 +184,7 @@ def resolve_conflict(
             ),
         )
 
-    # Step 8 — Build waypoint_times for result
+    # Step 10 — Build waypoint_times for result
     arrival_times = waypoint_arrival_times(fi, t_dep_star)
     waypoint_times_out: List[Tuple[str, float]] = [
         (wp.id, arrival_times[i]) for i, wp in enumerate(fi.lane.waypoints)
@@ -175,7 +192,7 @@ def resolve_conflict(
 
     expires_at = system_state.t_now + config.T_RESPONSE_WINDOW_SEC
 
-    # Step 9 — Return ApproveResult (no state mutation here)
+    # Step 11 — Return ApproveResult (no state mutation here)
     return ApproveResult(
         status='SOFT_RESERVED',
         t_dep_star=t_dep_star,

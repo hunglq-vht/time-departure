@@ -13,6 +13,7 @@ from scrp.models import (
     SCRPConfig,
     Segment,
     SystemState,
+    TakeoffPad,
     VertiportState,
     Waypoint,
 )
@@ -60,6 +61,8 @@ def make_fi(
     priority: int = 1,
     t_takeoff: Optional[float] = None,
     t_land_estimated: Optional[float] = None,
+    origin_vertiport_id: str = "",
+    takeoff_pad_id: str = "",
 ) -> FlightIntention:
     v_waypoints = [v] * len(lane.waypoints)
     return FlightIntention(
@@ -75,7 +78,21 @@ def make_fi(
         operator_id=operator_id,
         t_takeoff=t_takeoff,
         t_land_estimated=t_land_estimated,
+        origin_vertiport_id=origin_vertiport_id,
+        takeoff_pad_id=takeoff_pad_id,
     )
+
+
+def make_takeoff_pad(
+    id: str,
+    x: float = 0.0,
+    y: float = 0.0,
+    z: float = 0.0,
+    compatible_types: list[str] | None = None,
+) -> TakeoffPad:
+    if compatible_types is None:
+        compatible_types = ["A", "B", "C"]
+    return TakeoffPad(id=id, position=(x, y, z), compatible_types=compatible_types)
 
 
 def make_vertiport(
@@ -83,6 +100,7 @@ def make_vertiport(
     n_slots: int = 200,
     vertiport_id: str = "vp1",
     pad_configs: list[tuple[str, list[str]]] | None = None,
+    takeoff_pads: list[TakeoffPad] | None = None,
 ) -> VertiportState:
     if pad_configs is None:
         pad_configs = [("pad1", ["A", "B", "C"])]
@@ -99,6 +117,7 @@ def make_vertiport(
         slot_duration=slot_duration,
         slots=slots,
         slot_status=slot_status,
+        takeoff_pads=takeoff_pads or [],
     )
 
 

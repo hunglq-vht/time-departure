@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple, Union
 
 
 @dataclass
@@ -80,6 +80,8 @@ class FlightIntention:
     operator_id: str
     t_takeoff: Optional[float] = None       # takeoff phase duration [s]; added before entering the lane
     t_land_estimated: Optional[float] = None  # landing phase duration [s]; added after exiting the lane
+    origin_vertiport_id: str = ""           # vertiport where this drone departs from
+    takeoff_pad_id: str = ""               # pad at origin vertiport used for departure
 
 
 @dataclass
@@ -97,11 +99,22 @@ class ApprovedPlan:
     algorithm: str = 'SCRP'                        # algorithm that produced this plan
     expires_at: Optional[float] = None
     vertiport_id: str = ""                         # destination vertiport for slot management
+    origin_vertiport_id: str = ""                  # origin vertiport this plan departs from
+    takeoff_pad_id: str = ""                       # pad at origin vertiport used for departure
+    t_takeoff: Optional[float] = None              # takeoff phase duration [s]
 
 
 @dataclass
 class Pad:
     id: str
+    compatible_types: List[str]
+
+
+@dataclass
+class TakeoffPad:
+    """A pad at the origin (takeoff) vertiport from which drones depart."""
+    id: str
+    position: Tuple[float, float, float]  # (x, y, z) absolute metres
     compatible_types: List[str]
 
 
@@ -112,6 +125,7 @@ class VertiportState:
     slot_duration: float  # seconds per slot, default 30
     slots: Dict[Tuple[str, int], Optional[str]]        # (pad_id, slot_index) -> drone_id | None
     slot_status: Dict[Tuple[str, int], str]            # (pad_id, slot_index) -> 'FREE'|'SOFT'|'COMMITTED'
+    takeoff_pads: List[TakeoffPad] = field(default_factory=list)  # pads used for departure
 
 
 @dataclass
@@ -158,10 +172,27 @@ class RejectResult:
     detail: str
 
 
-SCRPResult = ApproveResult | RejectResult
+SCRPResult = Union[ApproveResult, RejectResult]
 
 
 @dataclass
 class PlanDependency:
     plan_id: str
     depends_on: str
+
+
+@dataclass
+class DroneDeconflictEntry:
+    """Single entry in a multi-drone batch deconfliction result."""
+    drone_id: str
+    result: SCRPResult
+    processing_rank: int  # order in which this drone was processed (0 = highest priority)
+
+
+@dataclass
+class BatchDeconflictResult:
+    """Aggregated result from resolving a group of drones at the same takeoff vertiport."""
+    entries: List[DroneDeconflictEntry]           # one per input FI, in original input order
+    approved_count: int
+    rejected_count: int
+    total_drones: int
