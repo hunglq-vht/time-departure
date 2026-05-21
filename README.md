@@ -170,17 +170,77 @@ Nếu không có slot nào:
 **Nghiệm dạng đóng:**
 
 t_dep* = t_des + max(0, Delta_C1, Delta_C2, Delta_C3)
-### 3.5 Ràng buộc SoC (C4)
+### 3.5 Ràng buộc năng lượng / State-of-Charge (C4)
 
-t_land_new    = t_land(t_dep*)
-t_hover_wait  = max(0, t_slot_start(s*) - t_land_new)
-E_cruise      = sum( P_cruise(v_k, weather_k) * L_k / v_k / 3600
-                     for each segment k )
-E_hover_wait  = P_hover * t_hover_wait / 3600
-SoC_remaining = SoC_0 - (E_cruise + E_hover_wait) / C_bat
-IF SoC_remaining < SOC_MIN:
-    RETURN REJECT("SoC_insufficient")
-**Lưu ý:** Nếu không có dữ liệu thời tiết, dùng E_cruise tính từ P_hover nhân hệ số CRUISE_POWER_FACTOR (mặc định 1.2).
+**Mục đích:** Đảm bảo drone còn đủ pin sau khi hoàn thành toàn bộ nhiệm vụ (bay qua lane + chờ slot hạ cánh).  Nếu SoC dự kiến sau chuyến bay thấp hơn ngưỡng tối thiểu, FI bị từ chối ngay lập tức.
+
+**Cơ sở vật lý:**  Năng lượng điện tiêu thụ = Công suất × Thời gian.  Đơn vị dùng nhất quán là Watt-giờ (Wh), vì dung lượng pin thường đo bằng Wh (hoặc Ah × V).  Giảm SoC tỉ lệ thuận với năng lượng tiêu thụ:
+
+    ΔSoC = E_tiêu_thụ [Wh] / C_bat [Wh]
+
+#### Bảng biến
+
+| Ký hiệu | Tên đầy đủ | Đơn vị | Ý nghĩa |
+|---|---|---|---|
+| `SoC_0` | State of Charge (initial) | [0..1] | Phần dung lượng pin còn lại tại thời điểm cất cánh, do operator khai báo |
+| `C_bat` | Battery Capacity | Wh | Tổng năng lượng sử dụng được của pin |
+| `P_hover` | Hover Power | W | Công suất điện tiêu thụ khi hover tại chỗ (không có chuyển động ngang), do operator khai báo |
+| `CRUISE_POWER_FACTOR` | Cruise Power Factor | — | Hệ số nhân từ P_hover sang P_cruise; mặc định 1.2 (cruise tốn hơn hover ~20 %) |
+| `P_cruise` | Cruise Power | W | Công suất bay bằng ước tính; `P_cruise = P_hover × CRUISE_POWER_FACTOR` |
+| `L_k` | Segment Length (k) | m | Khoảng cách Euclid giữa hai waypoint liên tiếp của đoạn k |
+| `v_k` | Cruise Velocity (segment k) | m/s | Vận tốc bay trên đoạn k, do operator khai báo trong `v_waypoints[k]` |
+| `t_k` | Travel Time (segment k) | s | Thời gian di chuyển qua đoạn k: `t_k = L_k / v_k` |
+| `E_cruise` | Cruise Energy | Wh | Tổng năng lượng tiêu thụ trong giai đoạn bay qua toàn bộ lane |
+| `t_arrive_at_dest` | Arrival Time at Destination Airspace | s Unix | Thời điểm drone hoàn thành lane traversal và vào vùng tiếp cận vertiport (trước khi bắt đầu pha hạ cánh) |
+| `t_slot_start(s*)` | Landing Slot Start Time | s Unix | Thời điểm slot hạ cánh được phân công bắt đầu mở |
+| `t_hover_wait` | Hover Wait Duration | s | Thời gian hover chờ slot: `max(0, t_slot_start − t_arrive_at_dest)` |
+| `E_hover_wait` | Hover-Wait Energy | Wh | Năng lượng tiêu thụ trong giai đoạn hover chờ slot |
+| `E_total` | Total Mission Energy | Wh | Tổng năng lượng cả hai giai đoạn: `E_cruise + E_hover_wait` |
+| `SoC_remaining` | Remaining State of Charge | [0..1] | SoC dự kiến sau khi hạ cánh |
+| `SOC_MIN` | Minimum State of Charge | [0..1] | Ngưỡng tối thiểu chấp nhận được; mặc định 0.20 (còn 20 % pin) |
+
+#### Các bước tính
+
+**Bước 1 — Tính Cruise Power (P_cruise):**
+
+Drone đa cánh quạt khi bay bằng phải nghiêng về phía trước, vừa tạo lực nâng (chống lại trọng lực) vừa tạo lực đẩy (chống lại lực cản khí động học).  Do đó cruise thường tốn điện hơn hover.  Khi không có mô hình khí động học chi tiết, ta xấp xỉ:
+
+    P_cruise = P_hover × CRUISE_POWER_FACTOR          (W)
+
+**Bước 2 — Tính E_cruise (năng lượng pha bay qua lane):**
+
+Áp dụng công thức cơ bản E = P × t cho từng đoạn lane, rồi cộng tổng:
+
+    E_cruise = Σ_k  P_cruise × (L_k / v_k) / 3600     (Wh)
+
+  - `L_k / v_k` = thời gian di chuyển đoạn k [s]
+  - chia 3600 để chuyển giây → giờ (W × h = Wh)
+
+**Bước 3 — Tính thời gian hover chờ slot (t_hover_wait):**
+
+    t_land_new         = t_land(t_dep*)
+    t_arrive_at_dest   = t_land_new − t_land_estimated
+    t_hover_wait       = max(0, t_slot_start(s*) − t_arrive_at_dest)
+
+  - Nếu drone đến trước khi slot mở: `t_hover_wait > 0` → drone hover chờ.
+  - Nếu drone đến sau khi slot đã mở: `t_hover_wait = 0` → không cần hover thêm.
+  - `t_land_estimated` (thời lượng pha hạ cánh) được trừ ra để không mô hình hóa drone như đang hover trong khi thực ra đã đang thực hiện thao tác hạ cánh.
+
+**Bước 4 — Tính E_hover_wait (năng lượng pha hover chờ):**
+
+    E_hover_wait = P_hover × (t_hover_wait / 3600)    (Wh)
+
+**Bước 5 — Tính SoC_remaining:**
+
+    E_total       = E_cruise + E_hover_wait
+    SoC_remaining = SoC_0 − E_total / C_bat
+
+**Bước 6 — Kiểm tra ràng buộc C4:**
+
+    IF SoC_remaining < SOC_MIN:
+        RETURN REJECT("SoC_insufficient")
+
+**Lưu ý về thời tiết:** Trong triển khai hiện tại, P_cruise được tính bằng xấp xỉ `P_hover × CRUISE_POWER_FACTOR` vì không có dữ liệu thời tiết.  Khi có dữ liệu gió, P_cruise có thể được thay bằng hàm `P_cruise(v_k, weather_k)` tính từ blade element theory hoặc dữ liệu thực nghiệm.
 
 ---
 

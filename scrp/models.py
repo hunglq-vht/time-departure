@@ -58,28 +58,28 @@ class OperatorFlightRequest:
     t_des: float                      # desired departure time [s Unix]
     priority: int                     # 1 | 2 | 3  (1 = highest)
     # Drone specification submitted by the operator
-    uav_type: str                     # 'A' | 'B' | 'C'
-    SoC_0: float                      # state of charge [0..1]
-    C_bat: float                      # battery capacity [Wh]
-    P_hover: float                    # hover power [W]
-    t_takeoff: Optional[float] = None        # takeoff phase duration [s]
-    t_land_estimated: Optional[float] = None # landing phase duration [s]
+    uav_type: str                     # UAV Type: 'A' | 'B' | 'C'
+    SoC_0: float                      # State of Charge (initial): fraction of usable battery remaining at departure [0..1]
+    C_bat: float                      # Battery Capacity: total usable energy stored in the battery [Wh]
+    P_hover: float                    # Hover Power: electrical power consumed during stationary hover [W]
+    t_takeoff: Optional[float] = None        # Takeoff Phase Duration: time from liftoff to entering the lane [s]
+    t_land_estimated: Optional[float] = None # Landing Phase Duration: time from lane exit to touchdown [s]
 
 
 @dataclass
 class FlightIntention:
     drone_id: str
-    uav_type: str           # 'A' | 'B' | 'C'
+    uav_type: str           # UAV Type: 'A' | 'B' | 'C'
     lane: Lane
-    v_waypoints: List[float]  # velocity on each segment; len == len(lane.waypoints)
-    t_des: float              # desired departure time [s Unix]
-    SoC_0: float              # state of charge [0..1]
-    C_bat: float              # battery capacity [Wh]
-    P_hover: float            # hover power [W]
-    priority: int             # 1 | 2 | 3
+    v_waypoints: List[float]  # Cruise Velocity per segment [m/s]; v_waypoints[k] applies to lane.segments[k]
+    t_des: float              # Desired Departure Time [s Unix]: time the operator wants to take off
+    SoC_0: float              # State of Charge (initial): fraction of usable battery remaining at departure [0..1]
+    C_bat: float              # Battery Capacity: total usable energy stored in the battery [Wh]
+    P_hover: float            # Hover Power: electrical power consumed during stationary hover [W]
+    priority: int             # 1 | 2 | 3  (1 = highest)
     operator_id: str
-    t_takeoff: Optional[float] = None       # takeoff phase duration [s]; added before entering the lane
-    t_land_estimated: Optional[float] = None  # landing phase duration [s]; added after exiting the lane
+    t_takeoff: Optional[float] = None       # Takeoff Phase Duration: time from liftoff to entering the lane [s]
+    t_land_estimated: Optional[float] = None  # Landing Phase Duration: time from lane exit to touchdown [s]
 
 
 @dataclass
@@ -125,13 +125,13 @@ class SystemState:
 
 @dataclass
 class SCRPConfig:
-    SOC_MIN: float = 0.20
-    SLOT_DURATION_SEC: float = 30.0
-    T_RESPONSE_WINDOW_SEC: float = 120.0
-    JUNCTION_DIAMETER_M: float = 20.0
-    DEFAULT_TIMEOUT_BEHAVIOR: str = 'reject'   # 'reject' | 'accept'
-    CRUISE_POWER_FACTOR: float = 1.2
-    MAX_ACCEPTABLE_DELAY_SEC: float = 1800.0
+    SOC_MIN: float = 0.20                    # Minimum State of Charge: lower bound for SoC_remaining; flight rejected if SoC drops below this [0..1]
+    SLOT_DURATION_SEC: float = 30.0          # Landing Slot Duration: length of each time slot at a landing pad [s]
+    T_RESPONSE_WINDOW_SEC: float = 120.0     # Response Window: time the operator has to accept/reject a SOFT_RESERVED plan [s]
+    JUNCTION_DIAMETER_M: float = 20.0        # Junction Diameter: diameter of the exclusion zone around a junction waypoint [m]
+    DEFAULT_TIMEOUT_BEHAVIOR: str = 'reject' # Timeout Behavior: what happens when a SOFT_RESERVED plan expires — 'reject' (safe default) | 'accept'
+    CRUISE_POWER_FACTOR: float = 1.2         # Cruise Power Factor: ratio of cruise power to hover power; accounts for the extra energy needed to overcome aerodynamic drag in forward flight (default 1.2 → +20 %)
+    MAX_ACCEPTABLE_DELAY_SEC: float = 1800.0 # Maximum Acceptable Delay: longest t_dep* − t_des allowed before a flight intention is rejected [s]
 
 
 @dataclass
