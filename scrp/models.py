@@ -130,7 +130,7 @@ class SCRPConfig:
     T_RESPONSE_WINDOW_SEC: float = 120.0     # Response Window: time the operator has to accept/reject a SOFT_RESERVED plan [s]
     JUNCTION_DIAMETER_M: float = 20.0        # Junction Diameter: diameter of the exclusion zone around a junction waypoint [m]
     DEFAULT_TIMEOUT_BEHAVIOR: str = 'reject' # Timeout Behavior: what happens when a SOFT_RESERVED plan expires — 'reject' (safe default) | 'accept'
-    CRUISE_POWER_FACTOR: float = 1.2         # Cruise Power Factor: ratio of cruise power to hover power; accounts for the extra energy needed to overcome aerodynamic drag in forward flight (default 1.2 → +20 %)
+    CRUISE_POWER_FACTOR: float = 0.8         # Cruise Power Factor: ratio of cruise power to hover power; forward flight at moderate speed is ~20 % more efficient than hover (default 0.8 → P_cruise = 0.8 × P_hover)
     MAX_ACCEPTABLE_DELAY_SEC: float = 1800.0 # Maximum Acceptable Delay: longest t_dep* − t_des allowed before a flight intention is rejected [s]
 
 

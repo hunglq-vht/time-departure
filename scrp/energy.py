@@ -5,14 +5,22 @@ Physical basis
 Energy (Wh) = Power (W) × Time (h).  Battery capacity is specified in Wh,
 so every energy term is kept in Wh throughout.
 
-A multirotor in cruise is tilted forward, so it must generate both lift (to
-oppose gravity) and thrust (to overcome aerodynamic drag).  Empirically this
-costs more power than pure hover.  Because we usually lack full aerodynamic
-data at planning time, cruise power is approximated as:
+For a multirotor UAV, forward cruise flight at moderate speed is typically
+*more* energy-efficient than hovering in place.  During hover the rotor must
+accelerate a column of air downward at high induced velocity just to stay
+aloft; in forward flight the rotor meets fresh (undisturbed) air on each
+revolution, reducing induced velocity and therefore induced power.  As a
+result, at a typical cruise speed of 10–15 m/s, total electrical power is
+roughly 70–85 % of hover power.  Only at very high speeds does parasite drag
+dominate and push power back above hover level.
+
+Because we usually lack a full aerodynamic model at planning time, cruise
+power is approximated as:
 
     P_cruise = P_hover × CRUISE_POWER_FACTOR
 
-with CRUISE_POWER_FACTOR = 1.2 (i.e. cruise draws ~20 % more than hover).
+with CRUISE_POWER_FACTOR < 1.0 at typical cruise speeds (default 0.8, i.e.
+cruise draws ~20 % *less* than hover).
 
 State-of-Charge (SoC) is a dimensionless fraction in [0, 1] representing the
 fraction of usable battery energy remaining.  Depleting E Wh from a battery
@@ -34,8 +42,9 @@ def compute_E_cruise(fi: FlightIntention, config: SCRPConfig) -> float:
                                         of the drone specification.
     CRUISE_POWER_FACTOR : float [—]   — Cruise Power Factor; dimensionless
                                         multiplier that converts hover power to an
-                                        approximate cruise power.  Default 1.2
-                                        (cruise draws 20 % more than hover).
+                                        approximate cruise power.  Default 0.8
+                                        (cruise draws ~20 % *less* than hover at
+                                        typical moderate speeds).
     P_cruise            : float [W]   — Cruise Power; estimated power during
                                         forward flight.
                                         P_cruise = P_hover × CRUISE_POWER_FACTOR

@@ -185,7 +185,7 @@ t_dep* = t_des + max(0, Delta_C1, Delta_C2, Delta_C3)
 | `SoC_0` | State of Charge (initial) | [0..1] | Phần dung lượng pin còn lại tại thời điểm cất cánh, do operator khai báo |
 | `C_bat` | Battery Capacity | Wh | Tổng năng lượng sử dụng được của pin |
 | `P_hover` | Hover Power | W | Công suất điện tiêu thụ khi hover tại chỗ (không có chuyển động ngang), do operator khai báo |
-| `CRUISE_POWER_FACTOR` | Cruise Power Factor | — | Hệ số nhân từ P_hover sang P_cruise; mặc định 1.2 (cruise tốn hơn hover ~20 %) |
+| `CRUISE_POWER_FACTOR` | Cruise Power Factor | — | Hệ số nhân từ P_hover sang P_cruise; mặc định 0.8 (cruise tiết kiệm hơn hover ~20 % ở tốc độ hành trình bình thường; < 1.0 là điển hình, > 1.0 chỉ ở tốc độ rất cao) |
 | `P_cruise` | Cruise Power | W | Công suất bay bằng ước tính; `P_cruise = P_hover × CRUISE_POWER_FACTOR` |
 | `L_k` | Segment Length (k) | m | Khoảng cách Euclid giữa hai waypoint liên tiếp của đoạn k |
 | `v_k` | Cruise Velocity (segment k) | m/s | Vận tốc bay trên đoạn k, do operator khai báo trong `v_waypoints[k]` |
@@ -203,9 +203,13 @@ t_dep* = t_des + max(0, Delta_C1, Delta_C2, Delta_C3)
 
 **Bước 1 — Tính Cruise Power (P_cruise):**
 
-Drone đa cánh quạt khi bay bằng phải nghiêng về phía trước, vừa tạo lực nâng (chống lại trọng lực) vừa tạo lực đẩy (chống lại lực cản khí động học).  Do đó cruise thường tốn điện hơn hover.  Khi không có mô hình khí động học chi tiết, ta xấp xỉ:
+Với drone đa cánh quạt, bay bằng ở tốc độ hành trình vừa phải **tiêu điện ít hơn** hover tại chỗ.  Lý do: khi hover, rotor phải liên tục tăng tốc luồng khí đã bị nhiễu động từ vòng quay trước (induced velocity cao); khi bay bằng, rotor đón không khí sạch mỗi vòng quay, giảm induced velocity và do đó giảm công suất cảm ứng.  Ở tốc độ 10–15 m/s, tổng công suất điện thường chỉ bằng 70–85 % hover.  Chỉ ở tốc độ rất cao, lực cản khí động học (parasite drag) mới đẩy công suất vượt trở lại mức hover.
+
+Khi không có mô hình khí động học chi tiết, ta xấp xỉ:
 
     P_cruise = P_hover × CRUISE_POWER_FACTOR          (W)
+
+với `CRUISE_POWER_FACTOR < 1.0` ở tốc độ hành trình bình thường (mặc định 0.8).
 
 **Bước 2 — Tính E_cruise (năng lượng pha bay qua lane):**
 
