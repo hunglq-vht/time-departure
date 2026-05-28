@@ -176,10 +176,52 @@ message ResolveConflictResponse {
   }
 }
 
+// ---------- Flight route suggestion ----------
+
+message DroneProfileProto {
+  double weight_kg = 1;
+  double max_wind_resistance = 2;  // m/s
+  string drone_size = 3;           // 'A' | 'B' | 'C'
+}
+
+message FlightRouteProto {
+  string route_id = 1;
+  repeated WaypointProto waypoints = 2;
+  repeated SegmentProto segments = 3;
+  string take_off_vertiport_id = 4;
+  string landing_vertiport_id = 5;
+  double safety_score = 6;
+  double average_wind_speed = 7;   // m/s average along route
+  double max_drone_weight_kg = 8;
+  repeated string compatible_drone_sizes = 9;
+}
+
+message RouteSuggestionRequest {
+  string take_off_vertiport_id = 1;
+  string landing_vertiport_id = 2;
+  DroneProfileProto drone = 3;
+  double min_safety_score = 4;
+  repeated FlightRouteProto available_routes = 5;
+}
+
+message RouteRejectionProto {
+  FlightRouteProto route = 1;
+  string reason = 2;
+}
+
+message RouteSuggestionResponse {
+  repeated FlightRouteProto compatible_routes = 1;
+  repeated RouteRejectionProto rejected_routes = 2;
+}
+
 // ---------- Service ----------
 
 service SCRPService {
   // Compute the optimal departure time for a flight intention.
   // Returns either an approval (SOFT_RESERVED) or a rejection with reason.
   rpc ResolveConflict (ResolveConflictRequest) returns (ResolveConflictResponse);
+
+  // Given a drone profile and vertiport endpoints, return which published
+  // routes the drone is eligible to fly.
+  rpc SuggestRoutes (RouteSuggestionRequest) returns (RouteSuggestionResponse);
 }

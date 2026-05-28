@@ -41,6 +41,11 @@ class SCRPServiceStub(object):
                 request_serializer=scrp__pb2.ResolveConflictRequest.SerializeToString,
                 response_deserializer=scrp__pb2.ResolveConflictResponse.FromString,
                 _registered_method=True)
+        self.SuggestRoutes = channel.unary_unary(
+                '/scrp.SCRPService/SuggestRoutes',
+                request_serializer=scrp__pb2.RouteSuggestionRequest.SerializeToString,
+                response_deserializer=scrp__pb2.RouteSuggestionResponse.FromString,
+                _registered_method=True)
 
 
 class SCRPServiceServicer(object):
@@ -56,6 +61,14 @@ class SCRPServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SuggestRoutes(self, request, context):
+        """Given a drone profile and vertiport endpoints, return which published
+        routes the drone is eligible to fly.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_SCRPServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -63,6 +76,11 @@ def add_SCRPServiceServicer_to_server(servicer, server):
                     servicer.ResolveConflict,
                     request_deserializer=scrp__pb2.ResolveConflictRequest.FromString,
                     response_serializer=scrp__pb2.ResolveConflictResponse.SerializeToString,
+            ),
+            'SuggestRoutes': grpc.unary_unary_rpc_method_handler(
+                    servicer.SuggestRoutes,
+                    request_deserializer=scrp__pb2.RouteSuggestionRequest.FromString,
+                    response_serializer=scrp__pb2.RouteSuggestionResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -94,6 +112,33 @@ class SCRPService(object):
             '/scrp.SCRPService/ResolveConflict',
             scrp__pb2.ResolveConflictRequest.SerializeToString,
             scrp__pb2.ResolveConflictResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SuggestRoutes(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/scrp.SCRPService/SuggestRoutes',
+            scrp__pb2.RouteSuggestionRequest.SerializeToString,
+            scrp__pb2.RouteSuggestionResponse.FromString,
             options,
             channel_credentials,
             insecure,

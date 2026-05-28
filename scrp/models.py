@@ -165,3 +165,62 @@ SCRPResult = ApproveResult | RejectResult
 class PlanDependency:
     plan_id: str
     depends_on: str
+
+
+# ---------------------------------------------------------------------------
+# Flight route suggestion models
+# ---------------------------------------------------------------------------
+
+@dataclass
+class FlightRoute:
+    """A pre-planned route published by the external route service."""
+    route_id: str
+    waypoints: List[Waypoint]
+    take_off_vertiport_id: str
+    landing_vertiport_id: str
+    safety_score: float           # 0.0–1.0; higher is safer
+    average_wind_speed: float     # m/s average wind speed along this route
+    max_drone_weight_kg: float    # maximum drone weight this route supports
+    compatible_drone_sizes: List[str]  # subset of {'A', 'B', 'C'}
+    segments: List[Segment] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.segments and len(self.waypoints) >= 2:
+            import math
+            segs: List[Segment] = []
+            for i in range(len(self.waypoints) - 1):
+                a, b = self.waypoints[i], self.waypoints[i + 1]
+                dx = b.position[0] - a.position[0]
+                dy = b.position[1] - a.position[1]
+                dz = b.position[2] - a.position[2]
+                length = math.sqrt(dx * dx + dy * dy + dz * dz)
+                segs.append(Segment(p_start=a, p_end=b, length=length, v_min=5.0, v_max=20.0))
+            self.segments = segs
+
+
+@dataclass
+class DroneProfile:
+    """Drone characteristics used to filter compatible routes."""
+    weight_kg: float
+    max_wind_resistance: float  # m/s; maximum wind the drone can safely fly in
+    drone_size: str             # 'A' | 'B' | 'C'
+
+
+@dataclass
+class RouteSuggestionRequest:
+    take_off_vertiport_id: str
+    landing_vertiport_id: str
+    drone: DroneProfile
+    min_safety_score: float = 0.0  # routes with safety_score below this are excluded
+
+
+@dataclass
+class RouteRejection:
+    route: FlightRoute
+    reason: str  # see ROUTE_REJECTION_REASONS in route_suggestion.py
+
+
+@dataclass
+class RouteSuggestionResult:
+    compatible_routes: List[FlightRoute]
+    rejected_routes: List[RouteRejection]

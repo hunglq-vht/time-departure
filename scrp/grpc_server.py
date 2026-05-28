@@ -13,11 +13,16 @@ from scrp.proto import scrp_pb2, scrp_pb2_grpc
 from .models import (
     ApprovedPlan,
     ApproveResult,
+    DroneProfile,
     FlightIntention,
+    FlightRoute,
     Lane,
     OperatorFlightRequest,
     Pad,
     RejectResult,
+    RouteRejection,
+    RouteSuggestionRequest,
+    RouteSuggestionResult,
     SCRPConfig,
     Segment,
     SystemState,
@@ -25,6 +30,7 @@ from .models import (
     Waypoint,
 )
 from .scrp import resolve_conflict
+from .route_suggestion import suggest_routes
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +153,69 @@ def _system_state_from_proto(p: scrp_pb2.SystemStateProto) -> SystemState:
     )
 
 
+def _drone_profile_from_proto(p: scrp_pb2.DroneProfileProto) -> DroneProfile:
+    return DroneProfile(
+        weight_kg=p.weight_kg,
+        max_wind_resistance=p.max_wind_resistance,
+        drone_size=p.drone_size,
+    )
+
+
+def _flight_route_from_proto(p: scrp_pb2.FlightRouteProto) -> FlightRoute:
+    waypoints = [_wp_from_proto(w) for w in p.waypoints]
+    segments = [_seg_from_proto(s) for s in p.segments]
+    route = FlightRoute(
+        route_id=p.route_id,
+        waypoints=waypoints,
+        take_off_vertiport_id=p.take_off_vertiport_id,
+        landing_vertiport_id=p.landing_vertiport_id,
+        safety_score=p.safety_score,
+        average_wind_speed=p.average_wind_speed,
+        max_drone_weight_kg=p.max_drone_weight_kg,
+        compatible_drone_sizes=list(p.compatible_drone_sizes),
+        segments=segments,
+    )
+    return route
+
+
+def _flight_route_to_proto(r: FlightRoute) -> scrp_pb2.FlightRouteProto:
+    wps = [
+        scrp_pb2.WaypointProto(id=w.id, x=w.position[0], y=w.position[1], z=w.position[2])
+        for w in r.waypoints
+    ]
+    segs = [
+        scrp_pb2.SegmentProto(
+            p_start=scrp_pb2.WaypointProto(
+                id=s.p_start.id,
+                x=s.p_start.position[0],
+                y=s.p_start.position[1],
+                z=s.p_start.position[2],
+            ),
+            p_end=scrp_pb2.WaypointProto(
+                id=s.p_end.id,
+                x=s.p_end.position[0],
+                y=s.p_end.position[1],
+                z=s.p_end.position[2],
+            ),
+            length=s.length,
+            v_min=s.v_min,
+            v_max=s.v_max,
+        )
+        for s in r.segments
+    ]
+    return scrp_pb2.FlightRouteProto(
+        route_id=r.route_id,
+        waypoints=wps,
+        segments=segs,
+        take_off_vertiport_id=r.take_off_vertiport_id,
+        landing_vertiport_id=r.landing_vertiport_id,
+        safety_score=r.safety_score,
+        average_wind_speed=r.average_wind_speed,
+        max_drone_weight_kg=r.max_drone_weight_kg,
+        compatible_drone_sizes=r.compatible_drone_sizes,
+    )
+
+
 def _config_from_proto(p: scrp_pb2.SCRPConfigProto) -> SCRPConfig:
     cfg = SCRPConfig()
     if p.soc_min != 0.0:
@@ -243,3 +312,38 @@ class SCRPServicer(scrp_pb2_grpc.SCRPServiceServicer):
                     detail=f'Internal error: {exc}',
                 )
             )
+
+    def SuggestRoutes(
+        self,
+        request: scrp_pb2.RouteSuggestionRequest,
+        context: grpc.ServicerContext,
+    ) -> scrp_pb2.RouteSuggestionResponse:
+        try:
+            drone = _drone_profile_from_proto(request.drone)
+            available_routes = [_flight_route_from_proto(r) for r in request.available_routes]
+
+            suggestion_request = RouteSuggestionRequest(
+                take_off_vertiport_id=request.take_off_vertiport_id,
+                landing_vertiport_id=request.landing_vertiport_id,
+                drone=drone,
+                min_safety_score=request.min_safety_score,
+            )
+
+            result = suggest_routes(suggestion_request, available_routes)
+
+            compatible_protos = [_flight_route_to_proto(r) for r in result.compatible_routes]
+            rejected_protos = [
+                scrp_pb2.RouteRejectionProto(
+                    route=_flight_route_to_proto(rj.route),
+                    reason=rj.reason,
+                )
+                for rj in result.rejected_routes
+            ]
+            return scrp_pb2.RouteSuggestionResponse(
+                compatible_routes=compatible_protos,
+                rejected_routes=rejected_protos,
+            )
+        except Exception as exc:  # noqa: BLE001
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(exc))
+            return scrp_pb2.RouteSuggestionResponse()
