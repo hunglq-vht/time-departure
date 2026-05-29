@@ -21,11 +21,15 @@ from scrp.power_model import (
     AIR_DENSITY_SL,
     GRAVITY,
     FIGURE_OF_MERIT,
+    MOMENTUM_THEORY_EFFICIENCY,
     CLIMB_POWER_FACTOR,
     DESCENT_POWER_FACTOR,
     cruise_power_w,
     hover_induced_velocity,
+    hover_power_from_endurance,
+    hover_power_from_momentum_theory,
     parasite_drag_area,
+    resolve_hover_power,
     estimate_flight,
     _clamp,
 )
@@ -57,8 +61,9 @@ def _make_drone(
     max_descent_speed_ms: float = 3.0,
     max_wind_resistance_ms: float = 12.0,
     service_ceiling_m: float = 500.0,
-    hover_power_w: float = 1500.0,
+    hover_power_w: float = 1500.0,   # explicit; set to 0.0 to test derivation
     battery_energy_wh: float = 300.0,
+    flight_time_min: float = 0.0,
     soc_0: float = 1.0,
     soc_min: float = 0.20,
     cruise_speed_ms: float = 0.0,   # 0 → 75% of max_speed_ms = 15 m/s
@@ -76,8 +81,9 @@ def _make_drone(
         max_descent_speed_ms=max_descent_speed_ms,
         max_wind_resistance_ms=max_wind_resistance_ms,
         service_ceiling_m=service_ceiling_m,
-        hover_power_w=hover_power_w,
         battery_energy_wh=battery_energy_wh,
+        hover_power_w=hover_power_w,
+        flight_time_min=flight_time_min,
         soc_0=soc_0,
         soc_min=soc_min,
         cruise_speed_ms=cruise_speed_ms,
@@ -209,6 +215,91 @@ class TestCruisePower:
         P_wind = cruise_power_w(self.P_hover, self.v_i0, self.Cd_A,
                                 math.sqrt(v ** 2 + 5.0 ** 2))
         assert P_wind > P_no_wind
+
+
+class TestResolveHoverPower:
+    """hover_power_w is optional — the model derives it when absent."""
+
+    def test_explicit_value_returned_directly(self):
+        drone = _make_drone(hover_power_w=2000.0)
+        assert resolve_hover_power(drone) == pytest.approx(2000.0)
+
+    def test_flight_time_path(self):
+        # P = battery_energy / (flight_time_min / 60)
+        drone = _make_drone(hover_power_w=0.0, battery_energy_wh=300.0, flight_time_min=60.0)
+        assert resolve_hover_power(drone) == pytest.approx(300.0 / 1.0)
+
+    def test_flight_time_path_thirty_minutes(self):
+        drone = _make_drone(hover_power_w=0.0, battery_energy_wh=150.0, flight_time_min=30.0)
+        # 150 Wh / 0.5 h = 300 W
+        assert resolve_hover_power(drone) == pytest.approx(300.0)
+
+    def test_explicit_beats_flight_time(self):
+        # Explicit value takes priority even when flight_time_min is also set
+        drone = _make_drone(hover_power_w=1234.0, battery_energy_wh=300.0, flight_time_min=60.0)
+        assert resolve_hover_power(drone) == pytest.approx(1234.0)
+
+    def test_momentum_theory_fallback_formula(self):
+        # When neither hover_power_w nor flight_time_min is provided,
+        # momentum theory is used.
+        drone = _make_drone(hover_power_w=0.0, flight_time_min=0.0,
+                            mtow_kg=9.0, num_rotors=6, propeller_diameter_m=0.38)
+        p_resolved = resolve_hover_power(drone)
+        p_expected = hover_power_from_momentum_theory(9.0, 6, 0.38)
+        assert p_resolved == pytest.approx(p_expected)
+
+    def test_momentum_theory_physically_reasonable(self):
+        # A 9 kg hexacopter should hover somewhere in the 500-4000 W range
+        drone = _make_drone(hover_power_w=0.0, flight_time_min=0.0,
+                            mtow_kg=9.0, num_rotors=6, propeller_diameter_m=0.38)
+        p = resolve_hover_power(drone)
+        assert 500 < p < 4000
+
+    def test_momentum_theory_scales_with_weight(self):
+        light = _make_drone(hover_power_w=0.0, flight_time_min=0.0, mtow_kg=3.0)
+        heavy = _make_drone(hover_power_w=0.0, flight_time_min=0.0, mtow_kg=15.0)
+        assert resolve_hover_power(heavy) > resolve_hover_power(light)
+
+    def test_momentum_theory_scales_with_prop_area(self):
+        # Larger props → more disk area → lower induced velocity → less power
+        small_prop = _make_drone(hover_power_w=0.0, flight_time_min=0.0,
+                                 propeller_diameter_m=0.20)
+        large_prop = _make_drone(hover_power_w=0.0, flight_time_min=0.0,
+                                 propeller_diameter_m=0.50)
+        assert resolve_hover_power(large_prop) < resolve_hover_power(small_prop)
+
+    def test_hover_power_from_endurance_formula(self):
+        assert hover_power_from_endurance(300.0, 60.0) == pytest.approx(300.0)
+        assert hover_power_from_endurance(150.0, 30.0) == pytest.approx(300.0)
+
+    def test_hover_power_from_momentum_theory_formula(self):
+        mtow, N, D = 9.0, 6, 0.38
+        r = D / 2
+        A = N * math.pi * r * r
+        T = mtow * GRAVITY
+        P_ideal = T * math.sqrt(T / (2 * AIR_DENSITY_SL * A))
+        expected = P_ideal / MOMENTUM_THEORY_EFFICIENCY
+        assert hover_power_from_momentum_theory(mtow, N, D) == pytest.approx(expected, rel=1e-9)
+
+    def test_estimate_flight_uses_derived_hover_power(self):
+        # estimate_flight with hover_power_w=0 and flight_time_min=60 should give
+        # the same result as setting hover_power_w explicitly to the derived value
+        bat = 300.0
+        ft = 60.0
+        derived_p = hover_power_from_endurance(bat, ft)
+
+        drone_implicit = _make_drone(hover_power_w=0.0, flight_time_min=ft,
+                                     battery_energy_wh=bat,
+                                     takeoff_height_m=0.0, landing_height_m=0.0)
+        drone_explicit = _make_drone(hover_power_w=derived_p, battery_energy_wh=bat,
+                                     takeoff_height_m=0.0, landing_height_m=0.0)
+
+        route = _make_route(wind=0.0, segment_length_m=5000.0)
+        est_implicit = estimate_flight(drone_implicit, route)
+        est_explicit = estimate_flight(drone_explicit, route)
+
+        assert est_implicit.energy_consumed_wh == pytest.approx(est_explicit.energy_consumed_wh)
+        assert est_implicit.SoC_remaining == pytest.approx(est_explicit.SoC_remaining)
 
 
 class TestEstimeFlight:

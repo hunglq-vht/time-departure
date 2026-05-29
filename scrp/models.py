@@ -225,8 +225,19 @@ class DroneProfile:
     service_ceiling_m: float          # Max operating altitude [m ASL]
 
     # --- Power / battery (from datasheet) ---
-    hover_power_w: float              # Hover power consumption [W]
     battery_energy_wh: float          # Battery energy [Wh]
+
+    # hover_power_w: Hover power consumption [W].
+    # Set to 0.0 (the default) to let the model derive it automatically:
+    #   1. From battery_energy_wh + flight_time_min (if flight_time_min > 0)
+    #   2. From momentum theory using mtow_kg, num_rotors, propeller_diameter_m
+    hover_power_w: float = 0.0
+
+    # flight_time_min: manufacturer's stated endurance [minutes].
+    # Used only to derive hover_power_w when that field is absent.
+    # Should be the hover-only endurance figure if the datasheet distinguishes it
+    # from the forward-flight range figure.
+    flight_time_min: float = 0.0
 
     # --- Mission-specific parameters (not on the datasheet) ---
     soc_0: float = 1.0                # Initial state of charge [0..1]

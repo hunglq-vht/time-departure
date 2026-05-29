@@ -73,8 +73,19 @@ if TYPE_CHECKING:
 AIR_DENSITY_SL = 1.225   # kg/m³, ISA sea-level
 GRAVITY = 9.81            # m/s²
 
-# Aerodynamic model parameters
-FIGURE_OF_MERIT = 0.75    # FM = P_induced_ideal / P_hover; 0.70–0.80 for typical multirotors
+# --- Cruise power model ---
+# Fraction of hover power that is induced (aerodynamic) vs profile drag.
+# 0.70–0.80 for well-designed rotors; used only to split P_hover in the
+# cruise forward-flight model, not to derive P_hover itself.
+FIGURE_OF_MERIT = 0.75
+
+# --- Hover power derivation (momentum theory path) ---
+# End-to-end propulsion efficiency: P_ideal / P_electrical_hover.
+# Absorbs blade profile drag, tip losses, motor copper/iron losses, ESC
+# switching losses.  Typical range: 0.45–0.55 for small consumer drones,
+# 0.55–0.70 for medium professional drones.  Default 0.60 is conservative
+# and biases toward overestimating power draw (safer for energy planning).
+MOMENTUM_THEORY_EFFICIENCY = 0.60
 
 # Power factors for vertical flight phases (fractions of hover power)
 CLIMB_POWER_FACTOR = 1.10    # slightly above hover to gain altitude
@@ -103,6 +114,75 @@ def parasite_drag_area(mtow_kg: float, max_tilt_angle_deg: float, max_speed_ms: 
     """
     F_drag = mtow_kg * GRAVITY * math.tan(math.radians(max_tilt_angle_deg))
     return F_drag / (0.5 * AIR_DENSITY_SL * max_speed_ms ** 2)
+
+
+# ---------------------------------------------------------------------------
+# Hover power resolution
+# ---------------------------------------------------------------------------
+
+def hover_power_from_momentum_theory(
+    mtow_kg: float,
+    num_rotors: int,
+    propeller_diameter_m: float,
+    efficiency: float = MOMENTUM_THEORY_EFFICIENCY,
+) -> float:
+    """Estimate hover power [W] from propulsion geometry (momentum theory).
+
+    P_ideal = T^(3/2) / sqrt(2 · ρ · A_disk)  where T = MTOW · g.
+    P_hover  = P_ideal / efficiency
+
+    The *efficiency* parameter (η) captures the gap between the ideal
+    actuator-disk power and the real electrical input:
+      - Blade profile drag and tip losses
+      - Motor copper and iron losses
+      - ESC switching losses
+
+    Default η = 0.60 is intentionally conservative so that the energy
+    estimate errs toward over-predicting consumption rather than under.
+    Callers with measured hover power should supply it directly via
+    DroneProfile.hover_power_w instead of using this function.
+    """
+    r = propeller_diameter_m / 2.0
+    A_disk = num_rotors * math.pi * r * r
+    T = mtow_kg * GRAVITY
+    P_ideal = T * math.sqrt(T / (2.0 * AIR_DENSITY_SL * A_disk))
+    return P_ideal / efficiency
+
+
+def hover_power_from_endurance(battery_energy_wh: float, flight_time_min: float) -> float:
+    """Estimate hover power [W] from battery capacity and endurance.
+
+    P_hover = battery_energy_wh / (flight_time_min / 60)
+
+    Accuracy depends on what the manufacturer's "Flight time" represents:
+    - Hover-only endurance → result is true P_hover
+    - Cruise-speed range → result underestimates P_hover (cruise < hover for most
+      multirotors at moderate speed)
+
+    Use this path only when the datasheet explicitly states a hover endurance
+    figure and hover_power_w is not directly listed.
+    """
+    return battery_energy_wh / (flight_time_min / 60.0)
+
+
+def resolve_hover_power(drone: "DroneProfile") -> float:
+    """Return the effective hover power [W] using the best available data.
+
+    Resolution priority:
+    1. drone.hover_power_w > 0  →  use the datasheet value directly.
+    2. drone.flight_time_min > 0  →  derive from battery / endurance.
+    3. Fallback  →  momentum theory from mtow, rotors, prop diameter.
+
+    The result is used everywhere that needs a hover power reference: cruise
+    power model, takeoff/landing phase energy, and battery viability check.
+    """
+    if drone.hover_power_w > 0.0:
+        return drone.hover_power_w
+    if drone.flight_time_min > 0.0:
+        return hover_power_from_endurance(drone.battery_energy_wh, drone.flight_time_min)
+    return hover_power_from_momentum_theory(
+        drone.mtow_kg, drone.num_rotors, drone.propeller_diameter_m
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +227,10 @@ def estimate_flight(drone: "DroneProfile", route: "FlightRoute") -> "RouteFlight
 
     v_plan = drone.cruise_speed_ms if drone.cruise_speed_ms > 0.0 else drone.max_speed_ms * 0.75
 
-    # Pre-compute aerodynamic constants once (they depend only on drone specs)
+    # Resolve hover power once — used as the baseline for every energy term
+    P_hover = resolve_hover_power(drone)
+
+    # Pre-compute aerodynamic constants (depend only on drone specs)
     v_i0 = hover_induced_velocity(drone.mtow_kg, drone.num_rotors, drone.propeller_diameter_m)
     Cd_A = parasite_drag_area(drone.mtow_kg, drone.max_tilt_angle_deg, drone.max_speed_ms)
 
@@ -158,16 +241,16 @@ def estimate_flight(drone: "DroneProfile", route: "FlightRoute") -> "RouteFlight
         v_seg = _clamp(v_plan, seg.v_min, seg.v_max)
         v_eff = math.sqrt(v_seg ** 2 + route.average_wind_speed ** 2)
         t_seg = seg.length / v_seg
-        P_seg = cruise_power_w(drone.hover_power_w, v_i0, Cd_A, v_eff)
+        P_seg = cruise_power_w(P_hover, v_i0, Cd_A, v_eff)
         E_cruise_wh += P_seg * t_seg / 3600.0
         cruise_time_s += t_seg
 
     # Vertical transition phases
     t_takeoff = drone.takeoff_height_m / drone.max_ascent_speed_ms
-    E_takeoff_wh = CLIMB_POWER_FACTOR * drone.hover_power_w * t_takeoff / 3600.0
+    E_takeoff_wh = CLIMB_POWER_FACTOR * P_hover * t_takeoff / 3600.0
 
     t_landing = drone.landing_height_m / drone.max_descent_speed_ms
-    E_landing_wh = DESCENT_POWER_FACTOR * drone.hover_power_w * t_landing / 3600.0
+    E_landing_wh = DESCENT_POWER_FACTOR * P_hover * t_landing / 3600.0
 
     energy_consumed_wh = E_takeoff_wh + E_cruise_wh + E_landing_wh
     total_time_s = t_takeoff + cruise_time_s + t_landing

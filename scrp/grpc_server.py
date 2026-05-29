@@ -167,8 +167,9 @@ def _drone_profile_from_proto(p: scrp_pb2.DroneProfileProto) -> DroneProfile:
         max_descent_speed_ms=p.max_descent_speed_ms,
         max_wind_resistance_ms=p.max_wind_resistance_ms,
         service_ceiling_m=p.service_ceiling_m,
-        hover_power_w=p.hover_power_w,
         battery_energy_wh=p.battery_energy_wh,
+        hover_power_w=p.hover_power_w,          # 0.0 means "derive automatically"
+        flight_time_min=p.flight_time_min,
         soc_0=p.soc_0 if p.soc_0 > 0.0 else 1.0,
         soc_min=p.soc_min if p.soc_min > 0.0 else 0.20,
         cruise_speed_ms=p.cruise_speed_ms,          # 0 means "use 75% of max_speed_ms"

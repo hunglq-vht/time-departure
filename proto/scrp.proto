@@ -199,8 +199,17 @@ message DroneProfileProto {
   double service_ceiling_m = 10;      // Max operating altitude [m ASL]
 
   // Power / battery (datasheet)
-  double hover_power_w = 11;          // Hover power consumption [W]
   double battery_energy_wh = 12;      // Battery energy [Wh]
+
+  // hover_power_w: Hover power consumption [W] from datasheet.
+  // Leave as 0.0 to let the model derive it automatically (see below).
+  double hover_power_w = 11;
+
+  // flight_time_min: Manufacturer's stated endurance [minutes].
+  // Used only when hover_power_w == 0.0.  Should be the hover-only figure
+  // if the datasheet distinguishes it from the forward-flight range figure.
+  // Resolution priority: hover_power_w → flight_time_min → momentum theory.
+  double flight_time_min = 18;        // 0 = not provided
 
   // Mission-specific parameters (not on the datasheet; optional, 0.0 = use default)
   double soc_0 = 13;                  // Initial state of charge [0..1]; default 1.0
