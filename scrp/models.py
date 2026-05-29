@@ -61,7 +61,15 @@ class OperatorFlightRequest:
     uav_type: str                     # 'A' | 'B' | 'C'
     SoC_0: float                      # state of charge [0..1]
     C_bat: float                      # battery capacity [Wh]
-    P_hover: float                    # hover power [W]
+    # Hover power and propulsion geometry — at least one resolution path must be provided.
+    # Resolution priority: P_hover > 0 → flight_time_min > 0 → (mtow_kg + num_rotors + propeller_diameter_m)
+    P_hover: float = 0.0              # hover power [W]; 0.0 = derive automatically
+    num_rotors: int = 0               # number of rotors (for momentum-theory derivation)
+    propeller_diameter_m: float = 0.0 # propeller diameter [m]
+    mtow_kg: float = 0.0              # max takeoff weight [kg]
+    max_speed_ms: float = 0.0         # max horizontal speed [m/s] (for parasite drag)
+    max_tilt_angle_deg: float = 0.0   # max tilt angle [°] (for parasite drag)
+    flight_time_min: float = 0.0      # manufacturer endurance [min] (for endurance derivation)
     t_takeoff: Optional[float] = None        # takeoff phase duration [s]
     t_land_estimated: Optional[float] = None # landing phase duration [s]
 
@@ -75,9 +83,17 @@ class FlightIntention:
     t_des: float              # desired departure time [s Unix]
     SoC_0: float              # state of charge [0..1]
     C_bat: float              # battery capacity [Wh]
-    P_hover: float            # hover power [W]
     priority: int             # 1 | 2 | 3
     operator_id: str
+    # Hover power and propulsion geometry — at least one resolution path must be provided.
+    # Resolution priority: P_hover > 0 → flight_time_min > 0 → (mtow_kg + num_rotors + propeller_diameter_m)
+    P_hover: float = 0.0              # hover power [W]; 0.0 = derive automatically
+    num_rotors: int = 0               # number of rotors (for momentum-theory derivation)
+    propeller_diameter_m: float = 0.0 # propeller diameter [m]
+    mtow_kg: float = 0.0              # max takeoff weight [kg]
+    max_speed_ms: float = 0.0         # max horizontal speed [m/s] (for parasite drag)
+    max_tilt_angle_deg: float = 0.0   # max tilt angle [°] (for parasite drag)
+    flight_time_min: float = 0.0      # manufacturer endurance [min] (for endurance derivation)
     t_takeoff: Optional[float] = None       # takeoff phase duration [s]; added before entering the lane
     t_land_estimated: Optional[float] = None  # landing phase duration [s]; added after exiting the lane
 

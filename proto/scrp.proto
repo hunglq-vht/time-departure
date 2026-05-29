@@ -49,6 +49,14 @@ message OperatorFlightRequestProto {
   // Optional timing overrides — 0.0 means "not provided"
   double t_takeoff = 12;
   double t_land_estimated = 13;
+  // Propulsion geometry — used to derive hover power when p_hover is 0.0.
+  // Resolution priority: p_hover > 0 → flight_time_min > 0 → (mtow_kg + num_rotors + propeller_diameter_m)
+  int32  num_rotors = 14;
+  double propeller_diameter_m = 15;
+  double mtow_kg = 16;
+  double max_speed_ms = 17;
+  double max_tilt_angle_deg = 18;
+  double flight_time_min = 19;
 }
 
 // ---------- Approved plans ----------
