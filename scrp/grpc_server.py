@@ -157,17 +157,23 @@ def _system_state_from_proto(p: scrp_pb2.SystemStateProto) -> SystemState:
 
 def _drone_profile_from_proto(p: scrp_pb2.DroneProfileProto) -> DroneProfile:
     return DroneProfile(
-        weight_kg=p.weight_kg,
-        max_wind_resistance=p.max_wind_resistance,
         drone_size=p.drone_size,
-        cruise_speed=p.cruise_speed,
-        P_hover=p.p_hover,
-        C_bat=p.c_bat,
-        SoC_0=p.soc_0,
-        cruise_power_factor=p.cruise_power_factor if p.cruise_power_factor != 0.0 else 1.2,
-        t_takeoff_s=p.t_takeoff_s if p.t_takeoff_s != 0.0 else 30.0,
-        t_landing_s=p.t_landing_s if p.t_landing_s != 0.0 else 30.0,
-        SoC_min=p.soc_min if p.soc_min != 0.0 else 0.20,
+        mtow_kg=p.mtow_kg,
+        num_rotors=p.num_rotors,
+        propeller_diameter_m=p.propeller_diameter_m,
+        max_tilt_angle_deg=p.max_tilt_angle_deg,
+        max_speed_ms=p.max_speed_ms,
+        max_ascent_speed_ms=p.max_ascent_speed_ms,
+        max_descent_speed_ms=p.max_descent_speed_ms,
+        max_wind_resistance_ms=p.max_wind_resistance_ms,
+        service_ceiling_m=p.service_ceiling_m,
+        hover_power_w=p.hover_power_w,
+        battery_energy_wh=p.battery_energy_wh,
+        soc_0=p.soc_0 if p.soc_0 > 0.0 else 1.0,
+        soc_min=p.soc_min if p.soc_min > 0.0 else 0.20,
+        cruise_speed_ms=p.cruise_speed_ms,          # 0 means "use 75% of max_speed_ms"
+        takeoff_height_m=p.takeoff_height_m if p.takeoff_height_m > 0.0 else 50.0,
+        landing_height_m=p.landing_height_m if p.landing_height_m > 0.0 else 50.0,
     )
 
 
@@ -345,7 +351,6 @@ class SCRPServicer(scrp_pb2_grpc.SCRPServiceServicer):
                 take_off_vertiport_id=request.take_off_vertiport_id,
                 landing_vertiport_id=request.landing_vertiport_id,
                 drone=drone,
-                min_safety_score=request.min_safety_score,
             )
 
             result = suggest_routes(suggestion_request, available_routes)

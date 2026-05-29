@@ -200,23 +200,40 @@ class FlightRoute:
 
 @dataclass
 class DroneProfile:
-    """Drone characteristics used for route filtering and power estimation."""
-    # Physical / aerodynamic properties
-    weight_kg: float
-    max_wind_resistance: float  # m/s; maximum wind the drone can safely fly in
-    drone_size: str             # 'A' | 'B' | 'C'
-    cruise_speed: float         # m/s; planned cruise airspeed
+    """Drone characteristics drawn directly from the manufacturer's datasheet.
 
-    # Power / energy properties
-    P_hover: float              # W; power required to maintain hover
-    C_bat: float                # Wh; total battery capacity
-    SoC_0: float                # [0..1]; initial state of charge
+    Fields mirror standard datasheet sections: physical, performance, propulsion,
+    power/battery.  Mission-specific parameters (SoC, cruise speed, takeoff/landing
+    height) are added as optional fields because they change per flight while the
+    datasheet values remain constant.
+    """
 
-    # Per-drone overrides with sensible defaults
-    cruise_power_factor: float = 1.2   # P_cruise = P_hover * cruise_power_factor
-    t_takeoff_s: float = 30.0          # s; duration of the takeoff phase
-    t_landing_s: float = 30.0          # s; duration of the landing phase
-    SoC_min: float = 0.20              # minimum acceptable SoC on arrival
+    # --- Size class (for route compatibility) ---
+    drone_size: str                   # 'A' | 'B' | 'C'
+
+    # --- Physical & structural ---
+    mtow_kg: float                    # Max Takeoff Weight [kg]
+    num_rotors: int                   # Number of rotors
+    propeller_diameter_m: float       # Propeller diameter [m]
+    max_tilt_angle_deg: float         # Max tilt angle [°]; used to derive drag area
+
+    # --- Performance envelope ---
+    max_speed_ms: float               # Max horizontal speed [m/s]
+    max_ascent_speed_ms: float        # Max ascent speed [m/s]
+    max_descent_speed_ms: float       # Max descent speed [m/s]
+    max_wind_resistance_ms: float     # Max tolerated wind speed [m/s]
+    service_ceiling_m: float          # Max operating altitude [m ASL]
+
+    # --- Power / battery (from datasheet) ---
+    hover_power_w: float              # Hover power consumption [W]
+    battery_energy_wh: float          # Battery energy [Wh]
+
+    # --- Mission-specific parameters (not on the datasheet) ---
+    soc_0: float = 1.0                # Initial state of charge [0..1]
+    soc_min: float = 0.20             # Minimum acceptable SoC on arrival
+    cruise_speed_ms: float = 0.0      # Planned cruise speed; 0 → 75 % of max_speed_ms
+    takeoff_height_m: float = 50.0    # Altitude to climb during takeoff phase [m]
+    landing_height_m: float = 50.0    # Altitude to descend during landing phase [m]
 
 
 @dataclass
@@ -237,10 +254,16 @@ class SuggestedRoute:
 
 @dataclass
 class RouteSuggestionRequest:
+    """What a client submits to ask which routes are flyable.
+
+    The safety viability of each route is evaluated internally using the
+    route's safety_score from the external route service.  Callers do not
+    set a safety threshold — the system adapts the minimum required score
+    to the drone's operating conditions (primarily wind margin).
+    """
     take_off_vertiport_id: str
     landing_vertiport_id: str
     drone: DroneProfile
-    min_safety_score: float = 0.0  # routes with safety_score below this are excluded
 
 
 @dataclass
