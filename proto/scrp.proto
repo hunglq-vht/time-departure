@@ -179,9 +179,22 @@ message ResolveConflictResponse {
 // ---------- Flight route suggestion ----------
 
 message DroneProfileProto {
+  // Physical / aerodynamic
   double weight_kg = 1;
-  double max_wind_resistance = 2;  // m/s
+  double max_wind_resistance = 2;  // m/s; max wind the drone tolerates
   string drone_size = 3;           // 'A' | 'B' | 'C'
+  double cruise_speed = 4;         // m/s; planned cruise airspeed
+
+  // Power / energy
+  double p_hover = 5;              // W; hover power
+  double c_bat = 6;                // Wh; total battery capacity
+  double soc_0 = 7;                // [0..1]; initial state of charge
+
+  // Optional overrides (0.0 means use default)
+  double cruise_power_factor = 8;  // P_cruise = P_hover * factor; default 1.2
+  double t_takeoff_s = 9;          // s; takeoff phase duration; default 30
+  double t_landing_s = 10;         // s; landing phase duration; default 30
+  double soc_min = 11;             // minimum acceptable SoC on arrival; default 0.20
 }
 
 message FlightRouteProto {
@@ -194,6 +207,18 @@ message FlightRouteProto {
   double average_wind_speed = 7;   // m/s average along route
   double max_drone_weight_kg = 8;
   repeated string compatible_drone_sizes = 9;
+}
+
+message RouteFlightEstimateProto {
+  double cruise_time_s = 1;        // s; time flying the route segments
+  double total_time_s = 2;         // s; cruise + takeoff + landing phases
+  double energy_consumed_wh = 3;   // Wh; total energy across all phases
+  double soc_remaining = 4;        // [0..1]; battery fraction on arrival
+}
+
+message SuggestedRouteProto {
+  FlightRouteProto route = 1;
+  RouteFlightEstimateProto estimate = 2;
 }
 
 message RouteSuggestionRequest {
@@ -210,7 +235,7 @@ message RouteRejectionProto {
 }
 
 message RouteSuggestionResponse {
-  repeated FlightRouteProto compatible_routes = 1;
+  repeated SuggestedRouteProto suggested_routes = 1;
   repeated RouteRejectionProto rejected_routes = 2;
 }
 

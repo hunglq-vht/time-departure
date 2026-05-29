@@ -20,11 +20,13 @@ from .models import (
     OperatorFlightRequest,
     Pad,
     RejectResult,
+    RouteFlightEstimate,
     RouteRejection,
     RouteSuggestionRequest,
     RouteSuggestionResult,
     SCRPConfig,
     Segment,
+    SuggestedRoute,
     SystemState,
     VertiportState,
     Waypoint,
@@ -158,6 +160,14 @@ def _drone_profile_from_proto(p: scrp_pb2.DroneProfileProto) -> DroneProfile:
         weight_kg=p.weight_kg,
         max_wind_resistance=p.max_wind_resistance,
         drone_size=p.drone_size,
+        cruise_speed=p.cruise_speed,
+        P_hover=p.p_hover,
+        C_bat=p.c_bat,
+        SoC_0=p.soc_0,
+        cruise_power_factor=p.cruise_power_factor if p.cruise_power_factor != 0.0 else 1.2,
+        t_takeoff_s=p.t_takeoff_s if p.t_takeoff_s != 0.0 else 30.0,
+        t_landing_s=p.t_landing_s if p.t_landing_s != 0.0 else 30.0,
+        SoC_min=p.soc_min if p.soc_min != 0.0 else 0.20,
     )
 
 
@@ -213,6 +223,15 @@ def _flight_route_to_proto(r: FlightRoute) -> scrp_pb2.FlightRouteProto:
         average_wind_speed=r.average_wind_speed,
         max_drone_weight_kg=r.max_drone_weight_kg,
         compatible_drone_sizes=r.compatible_drone_sizes,
+    )
+
+
+def _route_flight_estimate_to_proto(e: RouteFlightEstimate) -> scrp_pb2.RouteFlightEstimateProto:
+    return scrp_pb2.RouteFlightEstimateProto(
+        cruise_time_s=e.cruise_time_s,
+        total_time_s=e.total_time_s,
+        energy_consumed_wh=e.energy_consumed_wh,
+        soc_remaining=e.SoC_remaining,
     )
 
 
@@ -331,7 +350,13 @@ class SCRPServicer(scrp_pb2_grpc.SCRPServiceServicer):
 
             result = suggest_routes(suggestion_request, available_routes)
 
-            compatible_protos = [_flight_route_to_proto(r) for r in result.compatible_routes]
+            suggested_protos = [
+                scrp_pb2.SuggestedRouteProto(
+                    route=_flight_route_to_proto(sr.route),
+                    estimate=_route_flight_estimate_to_proto(sr.estimate),
+                )
+                for sr in result.suggested_routes
+            ]
             rejected_protos = [
                 scrp_pb2.RouteRejectionProto(
                     route=_flight_route_to_proto(rj.route),
@@ -340,7 +365,7 @@ class SCRPServicer(scrp_pb2_grpc.SCRPServiceServicer):
                 for rj in result.rejected_routes
             ]
             return scrp_pb2.RouteSuggestionResponse(
-                compatible_routes=compatible_protos,
+                suggested_routes=suggested_protos,
                 rejected_routes=rejected_protos,
             )
         except Exception as exc:  # noqa: BLE001

@@ -200,10 +200,39 @@ class FlightRoute:
 
 @dataclass
 class DroneProfile:
-    """Drone characteristics used to filter compatible routes."""
+    """Drone characteristics used for route filtering and power estimation."""
+    # Physical / aerodynamic properties
     weight_kg: float
     max_wind_resistance: float  # m/s; maximum wind the drone can safely fly in
     drone_size: str             # 'A' | 'B' | 'C'
+    cruise_speed: float         # m/s; planned cruise airspeed
+
+    # Power / energy properties
+    P_hover: float              # W; power required to maintain hover
+    C_bat: float                # Wh; total battery capacity
+    SoC_0: float                # [0..1]; initial state of charge
+
+    # Per-drone overrides with sensible defaults
+    cruise_power_factor: float = 1.2   # P_cruise = P_hover * cruise_power_factor
+    t_takeoff_s: float = 30.0          # s; duration of the takeoff phase
+    t_landing_s: float = 30.0          # s; duration of the landing phase
+    SoC_min: float = 0.20              # minimum acceptable SoC on arrival
+
+
+@dataclass
+class RouteFlightEstimate:
+    """Per-route power and time estimates produced by the suggestion algorithm."""
+    cruise_time_s: float        # s; time spent flying the route segments
+    total_time_s: float         # s; cruise_time + takeoff + landing phases
+    energy_consumed_wh: float   # Wh; total energy across all flight phases
+    SoC_remaining: float        # [0..1]; estimated battery fraction on arrival
+
+
+@dataclass
+class SuggestedRoute:
+    """A compatible route paired with its estimated flight metrics."""
+    route: FlightRoute
+    estimate: RouteFlightEstimate
 
 
 @dataclass
@@ -217,10 +246,10 @@ class RouteSuggestionRequest:
 @dataclass
 class RouteRejection:
     route: FlightRoute
-    reason: str  # see ROUTE_REJECTION_REASONS in route_suggestion.py
+    reason: str  # see rejection reason constants in route_suggestion.py
 
 
 @dataclass
 class RouteSuggestionResult:
-    compatible_routes: List[FlightRoute]
+    suggested_routes: List[SuggestedRoute]
     rejected_routes: List[RouteRejection]
