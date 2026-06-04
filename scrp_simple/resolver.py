@@ -14,11 +14,29 @@ request is rejected.
 Priority is honoured at the *batch* level via ``resolve_batch``: requests
 are processed in priority order so higher-priority plans lock in their
 slots first.
+
+Headway formula
+---------------
+Reuses ``scrp.headway.h_min_full`` directly.  Parameter mapping:
+    v_i (headway.py)  = v_follow  (follower / new drone)
+    v_j (headway.py)  = v_lead    (lead / approved drone)
+    body_len_j        = 0.0       (body length excluded in the simple model)
+    v_min_seg         = unused    (not needed by the formula itself)
+
+Landing-pad model
+-----------------
+``slot.py`` was *not* reused because it operates on a discrete slot grid
+with per-pad UAV-type compatibility (``VertiportState`` / ``PadState``).
+The simplified model collapses pad state to a single integer (``total_pads``)
+and tracks occupancy as continuous time intervals, which makes ``find_earliest_slot``
+incompatible without pulling in the full slot machinery.
 """
 
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
+
+from scrp.headway import h_min_full
 
 from .models import ApprovedPlan, FlightPath, NewPlanRequest, Point3D, ResolveResult, Vertiport
 
@@ -124,33 +142,19 @@ class ConflictResolver:
         self, v_lead: float, v_follow: float, seg_len: float
     ) -> float:
         """
-        Minimum time (seconds) the following drone must wait after the *lead*
-        drone *enters* the segment so that separation stays ≥ MIN_SEPARATION_M
-        throughout.
+        Thin wrapper around ``scrp.headway.h_min_full``.
 
-        Derivation
-        ----------
-        Let t = 0 when the lead enters.  Lead position: v_lead · t.
-        Following enters at t = h, position: v_follow · (t − h).
-        Gap at time t: gap(t) = (v_lead − v_follow) · t + v_follow · h.
-
-        • v_follow ≤ v_lead  → gap grows after entry; only initial gap matters:
-          v_lead · h ≥ MIN_SEP  →  h ≥ MIN_SEP / v_lead.
-
-        • v_follow > v_lead  → gap shrinks; minimum reached when lead exits
-          (t = seg_len / v_lead):
-          gap_min = seg_len − v_follow · seg_len / v_lead + v_follow · h
-          Require gap_min ≥ MIN_SEP  and  initial gap ≥ MIN_SEP.
+        headway.py convention:  v_i = follower,  v_j = lead.
+        body_len_j = 0 (body length not modelled in the simple variant).
         """
-        if v_follow <= v_lead:
-            return self.MIN_SEPARATION_M / v_lead
-
-        h_initial = self.MIN_SEPARATION_M / v_lead
-        h_exit = (
-            self.MIN_SEPARATION_M / v_follow
-            + seg_len * (1.0 / v_lead - 1.0 / v_follow)
+        return h_min_full(
+            msd=self.MIN_SEPARATION_M,
+            body_len_j=0.0,
+            v_i=v_follow,
+            v_j=v_lead,
+            seg_length=seg_len,
+            v_min_seg=min(v_lead, v_follow),
         )
-        return max(h_initial, h_exit)
 
     # ──────────────────────────────────────────────────────────────────────────
     # Constraint 1: same-lane separation
