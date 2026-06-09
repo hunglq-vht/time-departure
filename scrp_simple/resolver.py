@@ -6,7 +6,7 @@ Four constraints are checked in order inside a convergence loop:
   C1 – Lane separation
        Two drones on the same directed segment (waypoint → waypoint) must
        maintain at least MIN_SEPARATION_M at all times.
-       Uses ``scrp.headway.h_min_full`` for the minimum time-headway formula.
+       Uses ``_h_min_full`` (defined in this module) for the minimum time-headway formula.
 
   C2 – Vertiport airspace at *departure* (takeoff serialisation)
        Only one drone may use the shared airspace above a vertiport at a
@@ -41,10 +41,10 @@ delay value, so all four passes run inside a loop until ``delay`` stabilises
 
 Headway formula
 ---------------
-Reuses ``scrp.headway.h_min_full`` directly:
-    v_i (headway.py) = v_follow  (following / new drone)
-    v_j (headway.py) = v_lead    (lead / approved drone)
-    body_len_j = 0.0             (body length not modelled here)
+Uses ``_h_min_full`` (local to this module):
+    v_i = v_follow  (following / new drone)
+    v_j = v_lead    (lead / approved drone)
+    body_len_j = 0.0  (body length not modelled here)
 
 Pad model vs slot.py
 --------------------
@@ -58,8 +58,6 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
-from scrp.headway import h_min_full
-
 from .models import (
     ApprovedPlan,
     FlightPath,
@@ -69,6 +67,24 @@ from .models import (
     ResolveResult,
     Vertiport,
 )
+
+
+def _h_min_full(
+    msd: float,
+    body_len_j: float,
+    v_i: float,
+    v_j: float,
+    seg_length: float,
+    v_min_seg: float,  # noqa: ARG001 — kept for API symmetry
+) -> float:
+    """Minimum time headway between a follower (v_i) and a lead drone (v_j).
+
+    h = (MSD + L_body_j) / v_j
+        + max(0, v_i - v_j) * seg_length / (v_i * v_j)
+    """
+    base = (msd + body_len_j) / v_j
+    correction = max(0.0, v_i - v_j) * seg_length / (v_i * v_j) if v_i > v_j else 0.0
+    return base + correction
 
 
 class ConflictResolver:
@@ -197,12 +213,12 @@ class ConflictResolver:
     ) -> float:
         """Minimum time gap (s) before the follower may enter a segment after the lead.
 
-        Delegates to ``scrp.headway.h_min_full``:
-          - v_i (headway.py) = v_follow
-          - v_j (headway.py) = v_lead
+        Delegates to ``_h_min_full``:
+          - v_i = v_follow
+          - v_j = v_lead
           - body_len_j = 0  (body length not modelled in this simplified version)
         """
-        return h_min_full(
+        return _h_min_full(
             msd=self.MIN_SEPARATION_M,
             body_len_j=0.0,
             v_i=v_follow,
