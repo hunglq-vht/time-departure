@@ -1,0 +1,1677 @@
+openapi: 3.0.3
+info:
+  title: SCRP – Slot & Conflict Resolution Platform
+  description: |
+    REST API cho hệ thống quản lý hành trình bay drone (SCRP).
+    Cung cấp các endpoint CRUD để quản lý flight intentions, approved plans,
+    vertiport states, system state và cấu hình hệ thống.
+  version: 1.0.0
+
+servers:
+  - url: /api/v1
+
+tags:
+  - name: flight-intentions
+    description: Quản lý yêu cầu bay từ operator
+  - name: approved-plans
+    description: Quản lý kế hoạch bay đã được duyệt
+  - name: vertiports
+    description: Quản lý trạng thái vertiport và landing pad
+  - name: system-state
+    description: Quản lý trạng thái hệ thống (MSD matrix, body length)
+  - name: config
+    description: Quản lý cấu hình thuật toán SCRP
+  - name: conflict
+    description: Giải quyết xung đột và phân bổ slot
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+paths:
+
+  # ===== Flight Intentions =====
+
+  /flight-intentions:
+    get:
+      tags: [flight-intentions]
+      summary: Lấy danh sách tất cả flight intentions
+      operationId: listFlightIntentions
+      parameters:
+        - $ref: '#/components/parameters/OperatorIdQuery'
+        - $ref: '#/components/parameters/DroneIdQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Danh sách flight intentions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OperatorFlightRequest'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags: [flight-intentions]
+      summary: Tạo mới một flight intention
+      operationId: createFlightIntention
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperatorFlightRequestCreate'
+      responses:
+        '201':
+          description: Flight intention được tạo thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorFlightRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /flight-intentions/{droneId}:
+    parameters:
+      - $ref: '#/components/parameters/DroneIdPath'
+
+    get:
+      tags: [flight-intentions]
+      summary: Lấy flight intention theo drone ID
+      operationId: getFlightIntention
+      responses:
+        '200':
+          description: Chi tiết flight intention
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorFlightRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags: [flight-intentions]
+      summary: Cập nhật toàn bộ flight intention
+      operationId: updateFlightIntention
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperatorFlightRequestCreate'
+      responses:
+        '200':
+          description: Flight intention sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorFlightRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      tags: [flight-intentions]
+      summary: Cập nhật một phần flight intention
+      operationId: patchFlightIntention
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperatorFlightRequestPatch'
+      responses:
+        '200':
+          description: Flight intention sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorFlightRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [flight-intentions]
+      summary: Xóa flight intention
+      operationId: deleteFlightIntention
+      responses:
+        '204':
+          description: Xóa thành công
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ===== Approved Plans =====
+
+  /approved-plans:
+    get:
+      tags: [approved-plans]
+      summary: Lấy danh sách tất cả approved plans
+      operationId: listApprovedPlans
+      parameters:
+        - $ref: '#/components/parameters/DroneIdQuery'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [SOFT_RESERVED, COMMITTED]
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Danh sách approved plans
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApprovedPlan'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags: [approved-plans]
+      summary: Tạo mới một approved plan (thủ công)
+      operationId: createApprovedPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovedPlanCreate'
+      responses:
+        '201':
+          description: Approved plan được tạo thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovedPlan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /approved-plans/{droneId}:
+    parameters:
+      - $ref: '#/components/parameters/DroneIdPath'
+
+    get:
+      tags: [approved-plans]
+      summary: Lấy approved plan theo drone ID
+      operationId: getApprovedPlan
+      responses:
+        '200':
+          description: Chi tiết approved plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovedPlan'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags: [approved-plans]
+      summary: Cập nhật toàn bộ approved plan
+      operationId: updateApprovedPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovedPlanCreate'
+      responses:
+        '200':
+          description: Approved plan sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovedPlan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      tags: [approved-plans]
+      summary: Cập nhật trạng thái approved plan (SOFT_RESERVED → COMMITTED)
+      operationId: patchApprovedPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovedPlanPatch'
+      responses:
+        '200':
+          description: Approved plan sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovedPlan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [approved-plans]
+      summary: Hủy / xóa approved plan
+      operationId: deleteApprovedPlan
+      responses:
+        '204':
+          description: Xóa thành công
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ===== Vertiports =====
+
+  /vertiports:
+    get:
+      tags: [vertiports]
+      summary: Lấy danh sách tất cả vertiports
+      operationId: listVertiports
+      responses:
+        '200':
+          description: Danh sách vertiports
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VertiportState'
+                  total:
+                    type: integer
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags: [vertiports]
+      summary: Tạo mới một vertiport
+      operationId: createVertiport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VertiportStateCreate'
+      responses:
+        '201':
+          description: Vertiport được tạo thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VertiportState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /vertiports/{vertiportId}:
+    parameters:
+      - $ref: '#/components/parameters/VertiportIdPath'
+
+    get:
+      tags: [vertiports]
+      summary: Lấy trạng thái vertiport
+      operationId: getVertiport
+      responses:
+        '200':
+          description: Trạng thái vertiport
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VertiportState'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags: [vertiports]
+      summary: Cập nhật toàn bộ vertiport
+      operationId: updateVertiport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VertiportStateCreate'
+      responses:
+        '200':
+          description: Vertiport sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VertiportState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      tags: [vertiports]
+      summary: Cập nhật một phần vertiport (ví dụ slot_duration)
+      operationId: patchVertiport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VertiportStatePatch'
+      responses:
+        '200':
+          description: Vertiport sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VertiportState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [vertiports]
+      summary: Xóa vertiport
+      operationId: deleteVertiport
+      responses:
+        '204':
+          description: Xóa thành công
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /vertiports/{vertiportId}/pads:
+    parameters:
+      - $ref: '#/components/parameters/VertiportIdPath'
+
+    get:
+      tags: [vertiports]
+      summary: Lấy danh sách pads của vertiport
+      operationId: listPads
+      responses:
+        '200':
+          description: Danh sách pads
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Pad'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags: [vertiports]
+      summary: Thêm pad mới vào vertiport
+      operationId: createPad
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PadCreate'
+      responses:
+        '201':
+          description: Pad được tạo thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pad'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vertiports/{vertiportId}/pads/{padId}:
+    parameters:
+      - $ref: '#/components/parameters/VertiportIdPath'
+      - $ref: '#/components/parameters/PadIdPath'
+
+    get:
+      tags: [vertiports]
+      summary: Lấy chi tiết một pad
+      operationId: getPad
+      responses:
+        '200':
+          description: Chi tiết pad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pad'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [vertiports]
+      summary: Cập nhật pad
+      operationId: updatePad
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PadCreate'
+      responses:
+        '200':
+          description: Pad sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pad'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [vertiports]
+      summary: Xóa pad khỏi vertiport
+      operationId: deletePad
+      responses:
+        '204':
+          description: Xóa thành công
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vertiports/{vertiportId}/slots:
+    parameters:
+      - $ref: '#/components/parameters/VertiportIdPath'
+
+    get:
+      tags: [vertiports]
+      summary: Lấy tất cả slot entries của vertiport
+      operationId: listSlots
+      parameters:
+        - name: padId
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [FREE, SOFT, COMMITTED]
+      responses:
+        '200':
+          description: Danh sách slot entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SlotEntry'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vertiports/{vertiportId}/slots/{padId}/{slotIndex}:
+    parameters:
+      - $ref: '#/components/parameters/VertiportIdPath'
+      - $ref: '#/components/parameters/PadIdPath'
+      - name: slotIndex
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    get:
+      tags: [vertiports]
+      summary: Lấy thông tin một slot cụ thể
+      operationId: getSlot
+      responses:
+        '200':
+          description: Thông tin slot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotEntry'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [vertiports]
+      summary: Cập nhật trạng thái slot (FREE / SOFT / COMMITTED)
+      operationId: updateSlotStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [FREE, SOFT, COMMITTED]
+                drone_id:
+                  type: string
+      responses:
+        '200':
+          description: Slot sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===== System State =====
+
+  /system-state:
+    get:
+      tags: [system-state]
+      summary: Lấy trạng thái hệ thống hiện tại
+      operationId: getSystemState
+      responses:
+        '200':
+          description: Trạng thái hệ thống
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemState'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags: [system-state]
+      summary: Thay thế toàn bộ system state
+      operationId: replaceSystemState
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemStateCreate'
+      responses:
+        '200':
+          description: System state sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      tags: [system-state]
+      summary: Cập nhật một phần system state (t_now, msd_matrix, body_length)
+      operationId: patchSystemState
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemStatePatch'
+      responses:
+        '200':
+          description: System state sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /system-state/msd-matrix:
+    get:
+      tags: [system-state]
+      summary: Lấy toàn bộ MSD matrix
+      operationId: getMsdMatrix
+      responses:
+        '200':
+          description: MSD matrix
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MsdEntry'
+
+    put:
+      tags: [system-state]
+      summary: Thay thế toàn bộ MSD matrix
+      operationId: replaceMsdMatrix
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries]
+              properties:
+                entries:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/MsdEntry'
+      responses:
+        '200':
+          description: MSD matrix sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MsdEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /system-state/msd-matrix/{uavTypeI}/{uavTypeJ}:
+    parameters:
+      - name: uavTypeI
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: uavTypeJ
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      tags: [system-state]
+      summary: Lấy giá trị MSD giữa hai loại UAV
+      operationId: getMsdEntry
+      responses:
+        '200':
+          description: Giá trị MSD
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MsdEntry'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [system-state]
+      summary: Tạo hoặc cập nhật MSD entry
+      operationId: upsertMsdEntry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [msd]
+              properties:
+                msd:
+                  type: number
+                  format: double
+                  description: Minimum separation distance [m]
+      responses:
+        '200':
+          description: MSD entry sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MsdEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+    delete:
+      tags: [system-state]
+      summary: Xóa MSD entry
+      operationId: deleteMsdEntry
+      responses:
+        '204':
+          description: Xóa thành công
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /system-state/body-lengths:
+    get:
+      tags: [system-state]
+      summary: Lấy danh sách body length theo UAV type
+      operationId: listBodyLengths
+      responses:
+        '200':
+          description: Danh sách body lengths
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BodyLengthEntry'
+
+    put:
+      tags: [system-state]
+      summary: Thay thế toàn bộ body length table
+      operationId: replaceBodyLengths
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries]
+              properties:
+                entries:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/BodyLengthEntry'
+      responses:
+        '200':
+          description: Body length table sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BodyLengthEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /system-state/body-lengths/{uavType}:
+    parameters:
+      - name: uavType
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      tags: [system-state]
+      summary: Lấy body length của một loại UAV
+      operationId: getBodyLength
+      responses:
+        '200':
+          description: Body length entry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BodyLengthEntry'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [system-state]
+      summary: Tạo hoặc cập nhật body length cho UAV type
+      operationId: upsertBodyLength
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [length_m]
+              properties:
+                length_m:
+                  type: number
+                  format: double
+                  description: Body length [m]
+      responses:
+        '200':
+          description: Body length entry sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BodyLengthEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+    delete:
+      tags: [system-state]
+      summary: Xóa body length entry
+      operationId: deleteBodyLength
+      responses:
+        '204':
+          description: Xóa thành công
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===== Config =====
+
+  /config:
+    get:
+      tags: [config]
+      summary: Lấy cấu hình SCRP hiện tại
+      operationId: getConfig
+      responses:
+        '200':
+          description: Cấu hình SCRP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SCRPConfig'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags: [config]
+      summary: Thay thế toàn bộ cấu hình SCRP
+      operationId: replaceConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SCRPConfig'
+      responses:
+        '200':
+          description: Cấu hình sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SCRPConfig'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      tags: [config]
+      summary: Cập nhật một phần cấu hình SCRP
+      operationId: patchConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SCRPConfigPatch'
+      responses:
+        '200':
+          description: Cấu hình sau khi cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SCRPConfig'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ===== Conflict Resolution =====
+
+  /conflict/resolve:
+    post:
+      tags: [conflict]
+      summary: Giải quyết xung đột và phân bổ slot cho flight intention
+      description: |
+        Tương đương với gRPC `ResolveConflict`. Tính toán thời điểm khởi hành
+        tối ưu, kiểm tra năng lượng, headway, junction clearance và slot vertiport.
+        Trả về SOFT_RESERVED hoặc REJECTED.
+      operationId: resolveConflict
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveConflictRequest'
+      responses:
+        '200':
+          description: Kết quả giải quyết xung đột
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveConflictResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /conflict/commit/{droneId}:
+    parameters:
+      - $ref: '#/components/parameters/DroneIdPath'
+
+    post:
+      tags: [conflict]
+      summary: Chuyển approved plan từ SOFT_RESERVED sang COMMITTED
+      operationId: commitPlan
+      responses:
+        '200':
+          description: Approved plan sau khi commit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovedPlan'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Plan không ở trạng thái SOFT_RESERVED hoặc đã hết hạn
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /conflict/expire/{droneId}:
+    parameters:
+      - $ref: '#/components/parameters/DroneIdPath'
+
+    post:
+      tags: [conflict]
+      summary: Hủy/expire một SOFT_RESERVED plan (timeout hoặc hủy thủ công)
+      operationId: expirePlan
+      responses:
+        '200':
+          description: Plan đã bị hủy, slot được giải phóng
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  drone_id:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+# ---------------------------------------------------------------------------
+# Components
+# ---------------------------------------------------------------------------
+components:
+
+  parameters:
+    DroneIdPath:
+      name: droneId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: ID của drone
+
+    DroneIdQuery:
+      name: droneId
+      in: query
+      schema:
+        type: string
+      description: Lọc theo drone ID
+
+    OperatorIdQuery:
+      name: operatorId
+      in: query
+      schema:
+        type: string
+      description: Lọc theo operator ID
+
+    VertiportIdPath:
+      name: vertiportId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: ID của vertiport
+
+    PadIdPath:
+      name: padId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: ID của landing pad
+
+    PageQuery:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+
+    LimitQuery:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 100
+
+  responses:
+    BadRequest:
+      description: Dữ liệu đầu vào không hợp lệ
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Tài nguyên không tồn tại
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Conflict:
+      description: Xung đột dữ liệu (ví dụ: ID đã tồn tại)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalError:
+      description: Lỗi server nội bộ
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+
+    # --- Primitive building blocks ---
+
+    Waypoint:
+      type: object
+      required: [id, x, y, z]
+      properties:
+        id:
+          type: string
+        x:
+          type: number
+          format: double
+        y:
+          type: number
+          format: double
+        z:
+          type: number
+          format: double
+
+    Segment:
+      type: object
+      required: [p_start, p_end, length, v_min, v_max]
+      properties:
+        p_start:
+          $ref: '#/components/schemas/Waypoint'
+        p_end:
+          $ref: '#/components/schemas/Waypoint'
+        length:
+          type: number
+          format: double
+          description: Chiều dài đoạn [m]
+        v_min:
+          type: number
+          format: double
+          description: Vận tốc tối thiểu [m/s]
+        v_max:
+          type: number
+          format: double
+          description: Vận tốc tối đa [m/s]
+
+    Lane:
+      type: object
+      required: [id, waypoints]
+      properties:
+        id:
+          type: string
+        waypoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/Waypoint'
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Segment'
+        destination_vertiport_id:
+          type: string
+
+    WaypointTimeEntry:
+      type: object
+      properties:
+        waypoint_id:
+          type: string
+        time:
+          type: number
+          format: double
+          description: Thời điểm Unix [s]
+
+    # --- Flight Intentions ---
+
+    OperatorFlightRequestCreate:
+      type: object
+      required:
+        - operator_id
+        - drone_id
+        - lane
+        - v_waypoints
+        - destination_vertiport_id
+        - t_des
+        - priority
+        - uav_type
+        - soc_0
+        - c_bat
+        - p_hover
+      properties:
+        operator_id:
+          type: string
+        drone_id:
+          type: string
+        lane:
+          $ref: '#/components/schemas/Lane'
+        v_waypoints:
+          type: array
+          items:
+            type: number
+            format: double
+          description: Vận tốc vào mỗi segment [m/s]
+        destination_vertiport_id:
+          type: string
+        t_des:
+          type: number
+          format: double
+          description: Thời điểm khởi hành mong muốn [s Unix]
+        priority:
+          type: integer
+          enum: [1, 2, 3]
+          description: Ưu tiên (1 = cao nhất)
+        uav_type:
+          type: string
+          enum: [A, B, C]
+        soc_0:
+          type: number
+          format: double
+          description: State of charge ban đầu [0..1]
+        c_bat:
+          type: number
+          format: double
+          description: Dung lượng pin [Wh]
+        p_hover:
+          type: number
+          format: double
+          description: Công suất hover [W]
+        t_takeoff:
+          type: number
+          format: double
+          nullable: true
+          description: Thời gian cất cánh [s]
+        t_land_estimated:
+          type: number
+          format: double
+          nullable: true
+          description: Thời gian hạ cánh ước tính [s]
+
+    OperatorFlightRequest:
+      allOf:
+        - $ref: '#/components/schemas/OperatorFlightRequestCreate'
+
+    OperatorFlightRequestPatch:
+      type: object
+      properties:
+        t_des:
+          type: number
+          format: double
+        priority:
+          type: integer
+          enum: [1, 2, 3]
+        soc_0:
+          type: number
+          format: double
+        t_takeoff:
+          type: number
+          format: double
+          nullable: true
+        t_land_estimated:
+          type: number
+          format: double
+          nullable: true
+
+    # --- Approved Plans ---
+
+    ApprovedPlanCreate:
+      type: object
+      required:
+        - drone_id
+        - uav_type
+        - lane
+        - v_waypoints
+        - t_land
+        - pad_id
+        - slot_index
+        - status
+      properties:
+        drone_id:
+          type: string
+        uav_type:
+          type: string
+          enum: [A, B, C]
+        lane:
+          $ref: '#/components/schemas/Lane'
+        v_waypoints:
+          type: array
+          items:
+            type: number
+            format: double
+        t_land:
+          type: number
+          format: double
+          description: Thời điểm hạ cánh được phân bổ [s Unix]
+        pad_id:
+          type: string
+        slot_index:
+          type: integer
+        status:
+          type: string
+          enum: [SOFT_RESERVED, COMMITTED]
+        t_dep:
+          type: number
+          format: double
+          nullable: true
+          description: Thời điểm khởi hành được duyệt [s Unix]
+        waypoint_times:
+          type: array
+          items:
+            $ref: '#/components/schemas/WaypointTimeEntry'
+        algorithm:
+          type: string
+          default: SCRP
+        expires_at:
+          type: number
+          format: double
+          nullable: true
+        vertiport_id:
+          type: string
+
+    ApprovedPlan:
+      allOf:
+        - $ref: '#/components/schemas/ApprovedPlanCreate'
+
+    ApprovedPlanPatch:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [SOFT_RESERVED, COMMITTED]
+        expires_at:
+          type: number
+          format: double
+          nullable: true
+
+    # --- Vertiport ---
+
+    Pad:
+      type: object
+      required: [id, compatible_types]
+      properties:
+        id:
+          type: string
+        compatible_types:
+          type: array
+          items:
+            type: string
+          example: [A, B]
+
+    PadCreate:
+      type: object
+      required: [id, compatible_types]
+      properties:
+        id:
+          type: string
+        compatible_types:
+          type: array
+          items:
+            type: string
+
+    SlotEntry:
+      type: object
+      properties:
+        pad_id:
+          type: string
+        slot_index:
+          type: integer
+        drone_id:
+          type: string
+          nullable: true
+          description: Trống nếu slot chưa được sử dụng
+        status:
+          type: string
+          enum: [FREE, SOFT, COMMITTED]
+
+    VertiportStateCreate:
+      type: object
+      required: [vertiport_id, pads, slot_duration]
+      properties:
+        vertiport_id:
+          type: string
+        pads:
+          type: array
+          items:
+            $ref: '#/components/schemas/Pad'
+        slot_duration:
+          type: number
+          format: double
+          description: Thời gian mỗi slot [s]
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/SlotEntry'
+
+    VertiportState:
+      allOf:
+        - $ref: '#/components/schemas/VertiportStateCreate'
+
+    VertiportStatePatch:
+      type: object
+      properties:
+        slot_duration:
+          type: number
+          format: double
+        pads:
+          type: array
+          items:
+            $ref: '#/components/schemas/Pad'
+
+    # --- System State ---
+
+    MsdEntry:
+      type: object
+      required: [uav_type_i, uav_type_j, msd]
+      properties:
+        uav_type_i:
+          type: string
+        uav_type_j:
+          type: string
+        msd:
+          type: number
+          format: double
+          description: Minimum separation distance [m]
+
+    BodyLengthEntry:
+      type: object
+      required: [uav_type, length_m]
+      properties:
+        uav_type:
+          type: string
+        length_m:
+          type: number
+          format: double
+          description: Chiều dài thân drone [m]
+
+    SystemStateCreate:
+      type: object
+      required: [t_now]
+      properties:
+        approved_plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApprovedPlan'
+        vertiport_states:
+          type: array
+          items:
+            $ref: '#/components/schemas/VertiportState'
+        t_now:
+          type: number
+          format: double
+          description: Thời điểm hiện tại [s Unix]
+        msd_matrix:
+          type: array
+          items:
+            $ref: '#/components/schemas/MsdEntry'
+        body_lengths:
+          type: array
+          items:
+            $ref: '#/components/schemas/BodyLengthEntry'
+
+    SystemState:
+      allOf:
+        - $ref: '#/components/schemas/SystemStateCreate'
+
+    SystemStatePatch:
+      type: object
+      properties:
+        t_now:
+          type: number
+          format: double
+        msd_matrix:
+          type: array
+          items:
+            $ref: '#/components/schemas/MsdEntry'
+        body_lengths:
+          type: array
+          items:
+            $ref: '#/components/schemas/BodyLengthEntry'
+
+    # --- Config ---
+
+    SCRPConfig:
+      type: object
+      properties:
+        soc_min:
+          type: number
+          format: double
+          default: 0.20
+          description: State of charge tối thiểu [0..1]
+        slot_duration_sec:
+          type: number
+          format: double
+          default: 30.0
+          description: Thời gian mỗi slot [s]
+        t_response_window_sec:
+          type: number
+          format: double
+          default: 120.0
+          description: Thời gian cửa sổ phản hồi [s]
+        junction_diameter_m:
+          type: number
+          format: double
+          default: 20.0
+          description: Đường kính vùng giao cắt [m]
+        default_timeout_behavior:
+          type: string
+          enum: [reject, accept]
+          default: reject
+          description: Hành vi mặc định khi timeout
+        cruise_power_factor:
+          type: number
+          format: double
+          default: 1.2
+          description: Hệ số công suất hành trình
+        max_acceptable_delay_sec:
+          type: number
+          format: double
+          default: 1800.0
+          description: Độ trễ tối đa chấp nhận [s]
+
+    SCRPConfigPatch:
+      type: object
+      properties:
+        soc_min:
+          type: number
+          format: double
+        slot_duration_sec:
+          type: number
+          format: double
+        t_response_window_sec:
+          type: number
+          format: double
+        junction_diameter_m:
+          type: number
+          format: double
+        default_timeout_behavior:
+          type: string
+          enum: [reject, accept]
+        cruise_power_factor:
+          type: number
+          format: double
+        max_acceptable_delay_sec:
+          type: number
+          format: double
+
+    # --- Conflict Resolution ---
+
+    ResolveConflictRequest:
+      type: object
+      required: [fi, system_state]
+      properties:
+        fi:
+          $ref: '#/components/schemas/OperatorFlightRequest'
+        approved_plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApprovedPlan'
+          description: Danh sách plans đã được duyệt (override system_state nếu cung cấp)
+        vertiport_state:
+          $ref: '#/components/schemas/VertiportState'
+          description: Trạng thái vertiport (override system_state nếu cung cấp)
+        system_state:
+          $ref: '#/components/schemas/SystemState'
+        config:
+          $ref: '#/components/schemas/SCRPConfig'
+
+    ApproveResult:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [SOFT_RESERVED]
+        t_dep_star:
+          type: number
+          format: double
+          description: Thời điểm khởi hành được duyệt [s Unix]
+        t_land_assigned:
+          type: number
+          format: double
+          description: Thời điểm hạ cánh được phân bổ [s Unix]
+        pad_id:
+          type: string
+        slot_index:
+          type: integer
+        waypoint_times:
+          type: array
+          items:
+            $ref: '#/components/schemas/WaypointTimeEntry'
+        expires_at:
+          type: number
+          format: double
+          description: Thời điểm hết hạn SOFT_RESERVED [s Unix]
+        delay_seconds:
+          type: number
+          format: double
+        delay_source:
+          type: string
+          enum: [C1_headway, C2_junction, C3_slot, none]
+        energy_estimate:
+          type: number
+          format: double
+          description: Ước tính năng lượng hành trình [Wh]
+        soc_remaining:
+          type: number
+          format: double
+          description: SoC còn lại sau chuyến bay [0..1]
+
+    RejectResult:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [REJECTED]
+        reason:
+          type: string
+          enum: [SoC_insufficient, no_slot_available, no_feasible_t_dep, invalid_fi]
+        earliest_possible:
+          type: number
+          format: double
+          nullable: true
+          description: Thời điểm khởi hành sớm nhất có thể [s Unix]
+        has_earliest_possible:
+          type: boolean
+        detail:
+          type: string
+
+    ResolveConflictResponse:
+      type: object
+      properties:
+        approve:
+          $ref: '#/components/schemas/ApproveResult'
+        reject:
+          $ref: '#/components/schemas/RejectResult'
+      description: Một trong hai trường approve hoặc reject được điền
+
+    # --- Error ---
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        detail:
+          type: string
