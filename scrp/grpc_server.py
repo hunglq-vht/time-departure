@@ -13,18 +13,26 @@ from scrp.proto import scrp_pb2, scrp_pb2_grpc
 from .models import (
     ApprovedPlan,
     ApproveResult,
+    DroneProfile,
     FlightIntention,
+    FlightRoute,
     Lane,
     OperatorFlightRequest,
     Pad,
     RejectResult,
+    RouteFlightEstimate,
+    RouteRejection,
+    RouteSuggestionRequest,
+    RouteSuggestionResult,
     SCRPConfig,
     Segment,
+    SuggestedRoute,
     SystemState,
     VertiportState,
     Waypoint,
 )
 from .scrp import resolve_conflict
+from .route_suggestion import suggest_routes
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +75,12 @@ def _operator_fi_from_proto(p: scrp_pb2.OperatorFlightRequestProto) -> OperatorF
         SoC_0=p.soc_0,
         C_bat=p.c_bat,
         P_hover=p.p_hover,
+        num_rotors=p.num_rotors,
+        propeller_diameter_m=p.propeller_diameter_m,
+        mtow_kg=p.mtow_kg,
+        max_speed_ms=p.max_speed_ms,
+        max_tilt_angle_deg=p.max_tilt_angle_deg,
+        flight_time_min=p.flight_time_min,
         t_takeoff=p.t_takeoff if p.t_takeoff != 0.0 else None,
         t_land_estimated=p.t_land_estimated if p.t_land_estimated != 0.0 else None,
     )
@@ -81,9 +95,15 @@ def _to_flight_intention(req: OperatorFlightRequest) -> FlightIntention:
         t_des=req.t_des,
         SoC_0=req.SoC_0,
         C_bat=req.C_bat,
-        P_hover=req.P_hover,
         priority=req.priority,
         operator_id=req.operator_id,
+        P_hover=req.P_hover,
+        num_rotors=req.num_rotors,
+        propeller_diameter_m=req.propeller_diameter_m,
+        mtow_kg=req.mtow_kg,
+        max_speed_ms=req.max_speed_ms,
+        max_tilt_angle_deg=req.max_tilt_angle_deg,
+        flight_time_min=req.flight_time_min,
         t_takeoff=req.t_takeoff,
         t_land_estimated=req.t_land_estimated,
     )
@@ -147,6 +167,93 @@ def _system_state_from_proto(p: scrp_pb2.SystemStateProto) -> SystemState:
     )
 
 
+def _drone_profile_from_proto(p: scrp_pb2.DroneProfileProto) -> DroneProfile:
+    return DroneProfile(
+        drone_size=p.drone_size,
+        mtow_kg=p.mtow_kg,
+        num_rotors=p.num_rotors,
+        propeller_diameter_m=p.propeller_diameter_m,
+        max_tilt_angle_deg=p.max_tilt_angle_deg,
+        max_speed_ms=p.max_speed_ms,
+        max_ascent_speed_ms=p.max_ascent_speed_ms,
+        max_descent_speed_ms=p.max_descent_speed_ms,
+        max_wind_resistance_ms=p.max_wind_resistance_ms,
+        service_ceiling_m=p.service_ceiling_m,
+        battery_energy_wh=p.battery_energy_wh,
+        hover_power_w=p.hover_power_w,          # 0.0 means "derive automatically"
+        flight_time_min=p.flight_time_min,
+        soc_0=p.soc_0 if p.soc_0 > 0.0 else 1.0,
+        soc_min=p.soc_min if p.soc_min > 0.0 else 0.20,
+        cruise_speed_ms=p.cruise_speed_ms,          # 0 means "use 75% of max_speed_ms"
+        takeoff_height_m=p.takeoff_height_m if p.takeoff_height_m > 0.0 else 50.0,
+        landing_height_m=p.landing_height_m if p.landing_height_m > 0.0 else 50.0,
+    )
+
+
+def _flight_route_from_proto(p: scrp_pb2.FlightRouteProto) -> FlightRoute:
+    waypoints = [_wp_from_proto(w) for w in p.waypoints]
+    segments = [_seg_from_proto(s) for s in p.segments]
+    route = FlightRoute(
+        route_id=p.route_id,
+        waypoints=waypoints,
+        take_off_vertiport_id=p.take_off_vertiport_id,
+        landing_vertiport_id=p.landing_vertiport_id,
+        safety_score=p.safety_score,
+        average_wind_speed=p.average_wind_speed,
+        max_drone_weight_kg=p.max_drone_weight_kg,
+        compatible_drone_sizes=list(p.compatible_drone_sizes),
+        segments=segments,
+    )
+    return route
+
+
+def _flight_route_to_proto(r: FlightRoute) -> scrp_pb2.FlightRouteProto:
+    wps = [
+        scrp_pb2.WaypointProto(id=w.id, x=w.position[0], y=w.position[1], z=w.position[2])
+        for w in r.waypoints
+    ]
+    segs = [
+        scrp_pb2.SegmentProto(
+            p_start=scrp_pb2.WaypointProto(
+                id=s.p_start.id,
+                x=s.p_start.position[0],
+                y=s.p_start.position[1],
+                z=s.p_start.position[2],
+            ),
+            p_end=scrp_pb2.WaypointProto(
+                id=s.p_end.id,
+                x=s.p_end.position[0],
+                y=s.p_end.position[1],
+                z=s.p_end.position[2],
+            ),
+            length=s.length,
+            v_min=s.v_min,
+            v_max=s.v_max,
+        )
+        for s in r.segments
+    ]
+    return scrp_pb2.FlightRouteProto(
+        route_id=r.route_id,
+        waypoints=wps,
+        segments=segs,
+        take_off_vertiport_id=r.take_off_vertiport_id,
+        landing_vertiport_id=r.landing_vertiport_id,
+        safety_score=r.safety_score,
+        average_wind_speed=r.average_wind_speed,
+        max_drone_weight_kg=r.max_drone_weight_kg,
+        compatible_drone_sizes=r.compatible_drone_sizes,
+    )
+
+
+def _route_flight_estimate_to_proto(e: RouteFlightEstimate) -> scrp_pb2.RouteFlightEstimateProto:
+    return scrp_pb2.RouteFlightEstimateProto(
+        cruise_time_s=e.cruise_time_s,
+        total_time_s=e.total_time_s,
+        energy_consumed_wh=e.energy_consumed_wh,
+        soc_remaining=e.SoC_remaining,
+    )
+
+
 def _config_from_proto(p: scrp_pb2.SCRPConfigProto) -> SCRPConfig:
     cfg = SCRPConfig()
     if p.soc_min != 0.0:
@@ -159,8 +266,6 @@ def _config_from_proto(p: scrp_pb2.SCRPConfigProto) -> SCRPConfig:
         cfg.JUNCTION_DIAMETER_M = p.junction_diameter_m
     if p.default_timeout_behavior:
         cfg.DEFAULT_TIMEOUT_BEHAVIOR = p.default_timeout_behavior
-    if p.cruise_power_factor != 0.0:
-        cfg.CRUISE_POWER_FACTOR = p.cruise_power_factor
     if p.max_acceptable_delay_sec != 0.0:
         cfg.MAX_ACCEPTABLE_DELAY_SEC = p.max_acceptable_delay_sec
     return cfg
@@ -243,3 +348,43 @@ class SCRPServicer(scrp_pb2_grpc.SCRPServiceServicer):
                     detail=f'Internal error: {exc}',
                 )
             )
+
+    def SuggestRoutes(
+        self,
+        request: scrp_pb2.RouteSuggestionRequest,
+        context: grpc.ServicerContext,
+    ) -> scrp_pb2.RouteSuggestionResponse:
+        try:
+            drone = _drone_profile_from_proto(request.drone)
+            available_routes = [_flight_route_from_proto(r) for r in request.available_routes]
+
+            suggestion_request = RouteSuggestionRequest(
+                take_off_vertiport_id=request.take_off_vertiport_id,
+                landing_vertiport_id=request.landing_vertiport_id,
+                drone=drone,
+            )
+
+            result = suggest_routes(suggestion_request, available_routes)
+
+            suggested_protos = [
+                scrp_pb2.SuggestedRouteProto(
+                    route=_flight_route_to_proto(sr.route),
+                    estimate=_route_flight_estimate_to_proto(sr.estimate),
+                )
+                for sr in result.suggested_routes
+            ]
+            rejected_protos = [
+                scrp_pb2.RouteRejectionProto(
+                    route=_flight_route_to_proto(rj.route),
+                    reason=rj.reason,
+                )
+                for rj in result.rejected_routes
+            ]
+            return scrp_pb2.RouteSuggestionResponse(
+                suggested_routes=suggested_protos,
+                rejected_routes=rejected_protos,
+            )
+        except Exception as exc:  # noqa: BLE001
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(exc))
+            return scrp_pb2.RouteSuggestionResponse()

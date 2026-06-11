@@ -49,6 +49,14 @@ message OperatorFlightRequestProto {
   // Optional timing overrides — 0.0 means "not provided"
   double t_takeoff = 12;
   double t_land_estimated = 13;
+  // Propulsion geometry — used to derive hover power when p_hover is 0.0.
+  // Resolution priority: p_hover > 0 → flight_time_min > 0 → (mtow_kg + num_rotors + propeller_diameter_m)
+  int32  num_rotors = 14;
+  double propeller_diameter_m = 15;
+  double mtow_kg = 16;
+  double max_speed_ms = 17;
+  double max_tilt_angle_deg = 18;
+  double flight_time_min = 19;
 }
 
 // ---------- Approved plans ----------
@@ -126,7 +134,7 @@ message SCRPConfigProto {
   double t_response_window_sec = 3;
   double junction_diameter_m = 4;
   string default_timeout_behavior = 5;
-  double cruise_power_factor = 6;
+  // field 6 (cruise_power_factor) removed — energy now computed from physics model
   double max_acceptable_delay_sec = 7;
 }
 
@@ -176,10 +184,101 @@ message ResolveConflictResponse {
   }
 }
 
+// ---------- Flight route suggestion ----------
+
+// DroneProfileProto uses manufacturer datasheet fields wherever possible.
+// Power model parameters (cruise_power_factor etc.) are derived internally
+// from propulsion and performance specs — callers do not supply them.
+message DroneProfileProto {
+  // Size class (for route compatibility)
+  string drone_size = 1;              // 'A' | 'B' | 'C'
+
+  // Physical & structural (datasheet)
+  double mtow_kg = 2;                 // Max Takeoff Weight [kg]
+  int32  num_rotors = 3;              // Number of rotors
+  double propeller_diameter_m = 4;    // Propeller diameter [m]
+  double max_tilt_angle_deg = 5;      // Max tilt angle [°]; used to derive drag area
+
+  // Performance envelope (datasheet)
+  double max_speed_ms = 6;            // Max horizontal speed [m/s]
+  double max_ascent_speed_ms = 7;     // Max ascent speed [m/s]
+  double max_descent_speed_ms = 8;    // Max descent speed [m/s]
+  double max_wind_resistance_ms = 9;  // Max tolerated wind speed [m/s]
+  double service_ceiling_m = 10;      // Max operating altitude [m ASL]
+
+  // Power / battery (datasheet)
+  double battery_energy_wh = 12;      // Battery energy [Wh]
+
+  // hover_power_w: Hover power consumption [W] from datasheet.
+  // Leave as 0.0 to let the model derive it automatically (see below).
+  double hover_power_w = 11;
+
+  // flight_time_min: Manufacturer's stated endurance [minutes].
+  // Used only when hover_power_w == 0.0.  Should be the hover-only figure
+  // if the datasheet distinguishes it from the forward-flight range figure.
+  // Resolution priority: hover_power_w → flight_time_min → momentum theory.
+  double flight_time_min = 18;        // 0 = not provided
+
+  // Mission-specific parameters (not on the datasheet; optional, 0.0 = use default)
+  double soc_0 = 13;                  // Initial state of charge [0..1]; default 1.0
+  double soc_min = 14;                // Min acceptable SoC on arrival; default 0.20
+  double cruise_speed_ms = 15;        // Planned cruise speed; 0 → 75 % of max_speed_ms
+  double takeoff_height_m = 16;       // Altitude to climb in takeoff phase [m]; default 50
+  double landing_height_m = 17;       // Altitude to descend in landing phase [m]; default 50
+}
+
+message FlightRouteProto {
+  string route_id = 1;
+  repeated WaypointProto waypoints = 2;
+  repeated SegmentProto segments = 3;
+  string take_off_vertiport_id = 4;
+  string landing_vertiport_id = 5;
+  double safety_score = 6;
+  double average_wind_speed = 7;   // m/s average along route
+  double max_drone_weight_kg = 8;
+  repeated string compatible_drone_sizes = 9;
+}
+
+message RouteFlightEstimateProto {
+  double cruise_time_s = 1;        // s; time flying the route segments
+  double total_time_s = 2;         // s; cruise + takeoff + landing phases
+  double energy_consumed_wh = 3;   // Wh; total energy across all phases
+  double soc_remaining = 4;        // [0..1]; battery fraction on arrival
+}
+
+message SuggestedRouteProto {
+  FlightRouteProto route = 1;
+  RouteFlightEstimateProto estimate = 2;
+}
+
+// Safety viability is evaluated internally using the route's own safety_score.
+// Callers do not supply a minimum — the system adapts the threshold to the
+// drone's operating conditions (primarily wind margin).
+message RouteSuggestionRequest {
+  string take_off_vertiport_id = 1;
+  string landing_vertiport_id = 2;
+  DroneProfileProto drone = 3;
+  repeated FlightRouteProto available_routes = 4;
+}
+
+message RouteRejectionProto {
+  FlightRouteProto route = 1;
+  string reason = 2;
+}
+
+message RouteSuggestionResponse {
+  repeated SuggestedRouteProto suggested_routes = 1;
+  repeated RouteRejectionProto rejected_routes = 2;
+}
+
 // ---------- Service ----------
 
 service SCRPService {
   // Compute the optimal departure time for a flight intention.
   // Returns either an approval (SOFT_RESERVED) or a rejection with reason.
   rpc ResolveConflict (ResolveConflictRequest) returns (ResolveConflictResponse);
+
+  // Given a drone profile and vertiport endpoints, return which published
+  // routes the drone is eligible to fly.
+  rpc SuggestRoutes (RouteSuggestionRequest) returns (RouteSuggestionResponse);
 }

@@ -154,11 +154,15 @@ class TestSlotOccupied:
 
 class TestSoCInsufficient:
     def test_low_battery_rejected(self, config):
-        # Very long route with tiny battery
+        # Long route with tiny battery and full propulsion geometry so SoC is computed
         wps = [make_waypoint(f"P{i}", i * 1000, 0) for i in range(5)]
         lane = make_lane("long", wps, v_min=5.0, v_max=20.0)
-        # SoC_0=0.21 (just above min), tiny C_bat → depleted quickly
-        fi = make_fi(lane, v=10.0, t_des=1000.0, SoC_0=0.21, C_bat=1.0, P_hover=500.0)
+        fi = make_fi(lane, v=10.0, t_des=1000.0, SoC_0=0.21, C_bat=1.0)
+        fi.mtow_kg = 5.0
+        fi.num_rotors = 4
+        fi.propeller_diameter_m = 0.3
+        fi.max_tilt_angle_deg = 30.0
+        fi.max_speed_ms = 20.0
         vp = make_vertiport()
         state = make_system_state(vertiport=vp)
 

@@ -54,7 +54,12 @@ def _fi(
     uav_type: str = "A",
     soc_0: float = 1.0,
     c_bat: float = 1000.0,
-    p_hover: float = 500.0,
+    p_hover: float = 0.0,
+    num_rotors: int = 0,
+    propeller_diameter_m: float = 0.0,
+    mtow_kg: float = 0.0,
+    max_speed_ms: float = 0.0,
+    max_tilt_angle_deg: float = 0.0,
 ) -> scrp_pb2.OperatorFlightRequestProto:
     return scrp_pb2.OperatorFlightRequestProto(
         operator_id="op1",
@@ -68,6 +73,11 @@ def _fi(
         soc_0=soc_0,
         c_bat=c_bat,
         p_hover=p_hover,
+        num_rotors=num_rotors,
+        propeller_diameter_m=propeller_diameter_m,
+        mtow_kg=mtow_kg,
+        max_speed_ms=max_speed_ms,
+        max_tilt_angle_deg=max_tilt_angle_deg,
     )
 
 
@@ -120,7 +130,6 @@ def _default_config() -> scrp_pb2.SCRPConfigProto:
         t_response_window_sec=120.0,
         junction_diameter_m=20.0,
         default_timeout_behavior="reject",
-        cruise_power_factor=1.2,
         max_acceptable_delay_sec=1800.0,
     )
 
@@ -182,8 +191,18 @@ class TestGrpcResolveConflict:
 
     def test_soc_insufficient_returns_reject(self, grpc_stub):
         lane = _simple_lane()
+        # Propulsion geometry provided so SoC is computed; tiny c_bat ensures depletion
         request = scrp_pb2.ResolveConflictRequest(
-            fi=_fi(lane, soc_0=0.001, c_bat=1.0),
+            fi=_fi(
+                lane,
+                soc_0=0.001,
+                c_bat=1.0,
+                mtow_kg=5.0,
+                num_rotors=4,
+                propeller_diameter_m=0.3,
+                max_tilt_angle_deg=30.0,
+                max_speed_ms=20.0,
+            ),
             approved_plans=[],
             vertiport_state=_vertiport(),
             system_state=_system_state(),
@@ -223,8 +242,18 @@ class TestGrpcResolveConflict:
 
     def test_approve_soc_and_energy_populated(self, grpc_stub):
         lane = _simple_lane()
+        # Full geometry so energy and SoC are computed
         request = scrp_pb2.ResolveConflictRequest(
-            fi=_fi(lane, soc_0=1.0, c_bat=1000.0, p_hover=500.0),
+            fi=_fi(
+                lane,
+                soc_0=1.0,
+                c_bat=1000.0,
+                mtow_kg=5.0,
+                num_rotors=4,
+                propeller_diameter_m=0.3,
+                max_tilt_angle_deg=30.0,
+                max_speed_ms=20.0,
+            ),
             approved_plans=[],
             vertiport_state=_vertiport(),
             system_state=_system_state(),
@@ -244,7 +273,6 @@ class TestGrpcResolveConflict:
             t_response_window_sec=120.0,
             junction_diameter_m=20.0,
             default_timeout_behavior="reject",
-            cruise_power_factor=1.2,
             max_acceptable_delay_sec=0.0,  # impossible to satisfy
         )
         # Add an approved plan that forces a delay

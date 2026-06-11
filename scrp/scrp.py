@@ -36,8 +36,6 @@ def _validate_fi(fi: FlightIntention) -> Optional[str]:
         return f"SoC_0={fi.SoC_0} not in [0, 1]"
     if fi.C_bat <= 0:
         return f"C_bat={fi.C_bat} must be positive"
-    if fi.P_hover <= 0:
-        return f"P_hover={fi.P_hover} must be positive"
     return None
 
 
@@ -152,11 +150,11 @@ def resolve_conflict(
     pad_id, slot_index = slot_key
     t_slot_start = slot_start_time(slot_index, 0.0, vertiport_state.slot_duration)
 
-    # Step 7 — SoC check (C4)
-    E_cruise = compute_E_cruise(fi, config)
+    # Step 7 — SoC check (C4); skipped when propulsion geometry is absent
+    E_cruise = compute_E_cruise(fi)
     SoC_remaining = compute_SoC_remaining(fi, t_dep_star, t_slot_start, E_cruise)
 
-    if SoC_remaining < config.SOC_MIN:
+    if SoC_remaining is not None and SoC_remaining < config.SOC_MIN:
         return RejectResult(
             status='REJECTED',
             reason='SoC_insufficient',
@@ -187,6 +185,6 @@ def resolve_conflict(
         expires_at=expires_at,
         delay_seconds=t_dep_star - t_des,
         delay_source=delay_source,
-        energy_estimate=E_cruise,
-        SoC_remaining=SoC_remaining,
+        energy_estimate=E_cruise if E_cruise is not None else 0.0,
+        SoC_remaining=SoC_remaining if SoC_remaining is not None else 1.0,
     )
