@@ -134,7 +134,7 @@ message SCRPConfigProto {
   double t_response_window_sec = 3;
   double junction_diameter_m = 4;
   string default_timeout_behavior = 5;
-  double cruise_power_factor = 6;
+  // field 6 (cruise_power_factor) removed — energy now computed from physics model
   double max_acceptable_delay_sec = 7;
 }
 

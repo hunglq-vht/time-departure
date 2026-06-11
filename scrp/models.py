@@ -146,7 +146,6 @@ class SCRPConfig:
     T_RESPONSE_WINDOW_SEC: float = 120.0
     JUNCTION_DIAMETER_M: float = 20.0
     DEFAULT_TIMEOUT_BEHAVIOR: str = 'reject'   # 'reject' | 'accept'
-    CRUISE_POWER_FACTOR: float = 1.2
     MAX_ACCEPTABLE_DELAY_SEC: float = 1800.0
 
 

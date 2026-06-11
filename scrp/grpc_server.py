@@ -266,8 +266,6 @@ def _config_from_proto(p: scrp_pb2.SCRPConfigProto) -> SCRPConfig:
         cfg.JUNCTION_DIAMETER_M = p.junction_diameter_m
     if p.default_timeout_behavior:
         cfg.DEFAULT_TIMEOUT_BEHAVIOR = p.default_timeout_behavior
-    if p.cruise_power_factor != 0.0:
-        cfg.CRUISE_POWER_FACTOR = p.cruise_power_factor
     if p.max_acceptable_delay_sec != 0.0:
         cfg.MAX_ACCEPTABLE_DELAY_SEC = p.max_acceptable_delay_sec
     return cfg
