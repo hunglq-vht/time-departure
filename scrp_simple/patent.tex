@@ -225,6 +225,10 @@ that, when executed, perform the above method.
 
   \item[\textbf{FIG.\,5}] is a flowchart of the priority-based batch resolution
     procedure.
+
+  \item[\textbf{FIG.\,6}] is a block diagram of the system architecture
+    comprising the Communication Interface, Resolver, Constraint Engine, and
+    Flight Plan Store components.
 \end{itemize}
 
 % =============================================================================
@@ -387,6 +391,42 @@ If neither holds, the required delay is derived from \eqref{eq:new_follows}:
 \end{equation}
 The constraint function is $f_1(d) = \max(d,\; \max_{s\in S} d'_s)$, where
 $S$ is the set of lane segments shared with any approved plan.
+
+\paragraph{Figure~2 -- Inter-drone distance evolution along a shared lane segment.}
+
+\begin{center}
+\begin{tikzpicture}[>=Stealth, scale=1.05]
+  % Background safety zones
+  \fill[green!10] (0,1.3) rectangle (7.5,4.8);
+  \fill[red!10]   (0,0)   rectangle (7.5,1.3);
+  % Axes
+  \draw[->] (0,0) -- (7.9,0) node[right]{\small $\tau$ (time after follower entry)};
+  \draw[->] (0,0) -- (0,5.0) node[above]{\small $G(\tau)$ (spatial gap)};
+  % Gap function: G(0)=4.5, G_min=0.8, tau*=5.5  (v_i > v_j, gap decreasing)
+  \draw[blue!80!black, very thick] (0,4.5) -- (5.5,0.8);
+  \draw[blue!80!black, thick, densely dashed] (5.5,0.8) -- (7.5,0.08);
+  % Safety threshold
+  \draw[red!70!black, dashed, semithick] (0,1.3) -- (7.5,1.3);
+  \node[left, red!70!black, font=\small] at (-0.05,1.3) {$\mathrm{MSD}+b_j$};
+  % Drop lines to G_min
+  \draw[gray, dashed] (5.5,0)   -- (5.5,0.8);
+  \draw[gray, dashed] (0,0.8)   -- (5.5,0.8);
+  \filldraw[blue!80!black] (5.5,0.8) circle (2pt);
+  % Tick labels
+  \node[below, font=\small]  at (5.5,0) {$\tau^*=L/v_i$};
+  \node[left,  font=\small]  at (0,4.5) {$v_j h$};
+  \node[left,  font=\small]  at (0,0.8) {$G_{\min}$};
+  % Curve equation label
+  \node[blue!80!black, font=\small] at (2.4,3.7)
+    {$G(\tau)=v_j h+(v_j-v_i)\tau$};
+  % Zone labels
+  \node[green!50!black, font=\small] at (6.5,3.2) {safe zone};
+  \node[red!60!black,   font=\small] at (6.5,0.5) {unsafe zone};
+  % Follower-exit annotation
+  \draw[->, gray, thin] (5.5,-0.6) node[below,font=\small]{follower exits segment}
+        -- (5.5,-0.05);
+\end{tikzpicture}
+\end{center}
 
 \bigskip
 \subsection*{6.3\quad Constraint C2 — Takeoff Airspace Exclusion}
@@ -552,6 +592,42 @@ and bounded, hence convergent.
 \end{algorithmic}
 \end{algorithm}
 
+\paragraph{Figure~3 -- Flowchart of the fixed-point iteration algorithm (single request).}
+
+\begin{center}
+\begin{tikzpicture}[>=Stealth,
+    box/.style ={draw, fill=blue!10, rounded corners=3pt,
+                 minimum width=5.8cm, minimum height=0.68cm,
+                 align=center, font=\small},
+    dec/.style ={draw, fill=yellow!20, diamond, aspect=3.4,
+                 inner sep=1pt, align=center, font=\small},
+    term/.style={draw, fill=gray!20, rounded corners=8pt,
+                 minimum width=3.5cm, minimum height=0.68cm,
+                 align=center, font=\small\bfseries},
+    arr/.style ={->, thick}
+  ]
+  \node[term]              (S)  at (0, 0.0)  {START};
+  \node[box]               (I)  at (0,-1.2)  {$d\gets0$;\quad$d_{\mathrm{prev}}\gets{-}\infty$;\quad$k\gets1$};
+  \node[box]               (DP) at (0,-2.4)  {$d_{\mathrm{prev}}\gets d$};
+  \node[box]               (F1) at (0,-3.6)  {$d\gets f_1(d,\,r,\,\mathcal{A})$\enspace{\scriptsize(C1 lane sep.)}};
+  \node[box]               (F2) at (0,-4.8)  {$d\gets f_2(d,\,r,\,\mathcal{A})$\enspace{\scriptsize(C2 takeoff)}};
+  \node[box]               (F3) at (0,-6.0)  {$d\gets f_3(d,\,r,\,\mathcal{A})$\enspace{\scriptsize(C3 landing)}};
+  \node[box]               (F4) at (0,-7.2)  {$(d,p^*)\gets f_4(d,\,r,\,\mathcal{A})$\enspace{\scriptsize(C4 pad)}};
+  \node[dec]               (CV) at (0,-8.7)  {$\lvert d-d_{\mathrm{prev}}\rvert<\varepsilon$ or $k{\ge}K$?};
+  \node[dec]               (WA) at (0,-10.2) {$d\le\texttt{max\_wait}$?};
+  \node[term,fill=green!20](AP) at (-3.2,-11.6){APPROVED\\$t_{\mathrm{des}}+d,\;p^*$};
+  \node[term,fill=red!20]  (RJ) at ( 3.2,-11.6){REJECTED};
+  % Main flow
+  \draw[arr] (S)--(I)--(DP)--(F1)--(F2)--(F3)--(F4)--(CV);
+  \draw[arr] (CV) -- node[right,font=\small]{yes} (WA);
+  \draw[arr] (WA.west) -- ++(-1.6,0) |- node[above,font=\small,pos=0.3]{yes} (AP.north);
+  \draw[arr] (WA.east) -- ++(1.6,0)  |- node[above,font=\small,pos=0.3]{no}  (RJ.north);
+  % Loop-back on "no" convergence
+  \draw[arr] (CV.east) -- node[above,font=\small]{no;\;$k\gets k{+}1$}
+             ++(4.2,0) |- (DP.east);
+\end{tikzpicture}
+\end{center}
+
 \paragraph{Convergence in practice.}
 Because the number of distinct window endpoints is bounded by twice the number
 of approved plans, and in typical UAM scenarios the number of active plans
@@ -592,6 +668,64 @@ $f_3, f_4$: unchanged.
 $|d - d_{\mathrm{prev}}| = 0 < \varepsilon$ $\Rightarrow$ \textbf{converged}
 at $d^* = 140$\,s.
 
+\paragraph{Figure~4 -- Timing diagram of three-round cascade convergence.}
+
+\begin{center}
+\begin{tikzpicture}[>=Stealth, xscale=0.052, yscale=1.0, font=\scriptsize]
+  % --- Approved plan windows ---
+  % Airspace A row (y: 2.5--3.2)
+  \fill[blue!30]   (0,2.5) rectangle  (10,3.2);
+  \fill[blue!30]  (10,2.5) rectangle  (20,3.2);
+  \fill[blue!30]  (20,2.5) rectangle  (30,3.2);
+  \fill[blue!45] (130,2.5) rectangle (140,3.2);
+  \foreach \a/\b in {0/10, 10/20, 20/30, 130/140}
+    \draw[blue!60] (\a,2.5) rectangle (\b,3.2);
+  \node[white, font=\tiny\bfseries] at (5,2.85)   {$P_1$};
+  \node[white, font=\tiny\bfseries] at (15,2.85)  {$P_2$};
+  \node[white, font=\tiny\bfseries] at (25,2.85)  {$P_3$};
+  \node[white, font=\tiny\bfseries] at (135,2.85) {$P_7$};
+  \draw[gray!40, thin] (0,2.5) -- (160,2.5);
+  \draw[gray!40, thin] (0,3.2) -- (160,3.2);
+  \node[left, font=\footnotesize] at (0,2.85) {Airspace~$A$};
+  % Pad B1 row (y: 1.5--2.2)
+  \fill[orange!40]  (34,1.5) rectangle  (94,2.2);
+  \fill[orange!55]  (94,1.5) rectangle (154,2.2);
+  \draw[orange!60]  (34,1.5) rectangle  (94,2.2);
+  \draw[orange!70]  (94,1.5) rectangle (154,2.2);
+  \node[font=\tiny\bfseries] at (64,1.85)  {$P_5$: [34,\,94)};
+  \node[font=\tiny\bfseries] at (124,1.85) {$P_6$: [94,\,154)};
+  \draw[gray!40, thin] (0,1.5) -- (160,1.5);
+  \draw[gray!40, thin] (0,2.2) -- (160,2.2);
+  \node[left, font=\footnotesize] at (0,1.85) {Pad~$B_1$};
+  % Separator
+  \draw[gray, thin] (0,1.2) -- (160,1.2);
+  \node[left, font=\footnotesize, gray] at (0,1.2) {\textit{new request}};
+  % Round 1 (y=0.8): f2 -> d=30, f4 -> d=130
+  \draw[red!70!black, thick, ->] (0,0.8) -- (163,0.8);
+  \filldraw[red!80!black]  (30,0.8) circle (4pt);
+  \filldraw[red!80!black] (130,0.8) circle (4pt);
+  \node[above, font=\tiny, red!80!black] at (30,0.82)  {$d{=}30$};
+  \node[above, font=\tiny, red!80!black] at (130,0.82) {$d{=}130$};
+  \node[left, font=\footnotesize, red!70!black] at (0,0.8) {Rd\,1};
+  % Round 2 (y=0.3): f1 -> d=131, f2 -> d=140
+  \draw[orange!80!black, thick, ->] (0,0.3) -- (163,0.3);
+  \filldraw[orange!80!black] (131,0.3) circle (4pt);
+  \filldraw[orange!80!black] (140,0.3) circle (4pt);
+  \node[above, font=\tiny, orange!80!black] at (131,0.32) {$d{=}131$};
+  \node[above, font=\tiny, orange!80!black] at (140,0.32) {$d{=}140$};
+  \node[left, font=\footnotesize, orange!80!black] at (0,0.3) {Rd\,2};
+  % Round 3 (y=-0.2): converged d*=140
+  \draw[green!60!black, thick, ->] (0,-0.2) -- (163,-0.2);
+  \filldraw[green!60!black] (140,-0.2) circle (4pt);
+  \node[above, font=\tiny, green!60!black] at (140,-0.18) {$d^*{=}140$\;$\checkmark$};
+  \node[left, font=\footnotesize, green!60!black] at (0,-0.2) {Rd\,3};
+  % Time axis
+  \draw[->] (0,-1.0) -- (165,-1.0) node[right, font=\small]{$t$\,(s)};
+  \foreach \t in {0,20,...,160}
+    \draw (\t,-0.95) -- (\t,-1.10) node[below, font=\tiny]{\t};
+\end{tikzpicture}
+\end{center}
+
 \bigskip
 \subsection*{6.7\quad Batch Resolution with Priority Ordering}
 
@@ -619,6 +753,44 @@ pool).  The disclosed batch procedure avoids this:
 \Return $\mathrm{result}[\text{original order}]$
 \end{algorithmic}
 \end{algorithm}
+
+\paragraph{Figure~5 -- Flowchart of the priority-based batch resolution procedure.}
+
+\begin{center}
+\begin{tikzpicture}[>=Stealth,
+    box/.style ={draw, fill=blue!10, rounded corners=3pt,
+                 minimum width=5.8cm, minimum height=0.68cm,
+                 align=center, font=\small},
+    dec/.style ={draw, fill=yellow!20, diamond, aspect=2.8,
+                 inner sep=1pt, align=center, font=\small},
+    term/.style={draw, fill=gray!20, rounded corners=8pt,
+                 minimum width=3.5cm, minimum height=0.68cm,
+                 align=center, font=\small\bfseries},
+    arr/.style ={->, thick}
+  ]
+  \node[term]              (S)  at (0, 0.0)  {START};
+  \node[box]               (SO) at (0,-1.2)  {Sort requests: priority ASC, $t_{\mathrm{des}}$ ASC};
+  \node[box]               (IN) at (0,-2.4)  {$\mathcal{A}'\gets\mathcal{A}$;\quad$i\gets1$};
+  \node[box]               (RE) at (0,-3.6)  {$\mathrm{result}[i]\gets\mathrm{Resolve}(r_i,\,\mathcal{A}')$};
+  \node[dec]               (AP) at (0,-5.0)  {$\mathrm{result}[i]$\;approved?};
+  \node[box,fill=green!10] (AD) at (0,-6.4)  {$\mathcal{A}'\gets\mathcal{A}'\cup\bigl\{\mathrm{ApprovedPlan}(r_i)\bigr\}$};
+  \node[dec]               (MR) at (0,-7.8)  {$i < m$?};
+  \node[term]              (EN) at (0,-9.2)  {Return \texttt{result}[1\,\ldots\,$m$]};
+  % Main flow
+  \draw[arr] (S)--(SO)--(IN)--(RE)--(AP);
+  \draw[arr] (AP) -- node[right,font=\small]{yes} (AD);
+  \draw[arr] (AD) -- (MR);
+  % No on approval: bypass AD, go directly to MR
+  \draw[arr] (AP.east) -- node[above,font=\small]{no} ++(3.2,0)
+             |- (MR.east);
+  % More? no -> end
+  \draw[arr] (MR) -- node[right,font=\small]{no} (EN);
+  % More? yes -> increment and loop back
+  \draw[arr] (MR.west) --
+             node[above,font=\small]{yes;\;$i\gets i{+}1$} ++(-3.8,0)
+             |- (RE.west);
+\end{tikzpicture}
+\end{center}
 
 \noindent
 By augmenting $\mathcal{A}'$ after each approval, higher-priority requests
@@ -650,6 +822,60 @@ The disclosed system comprises:
 The system may be deployed as a microservice on commodity cloud infrastructure,
 as a process on a UAM network management server, or as firmware on a
 ground-based vertiport controller.
+
+\paragraph{Figure~6 -- System architecture block diagram.}
+
+\begin{center}
+\begin{tikzpicture}[>=Stealth,
+    comp/.style={draw, fill=blue!10, rounded corners=5pt,
+                 minimum width=2.8cm, minimum height=1.0cm,
+                 align=center, font=\small\bfseries},
+    ext/.style ={draw, fill=gray!15, rounded corners=5pt,
+                 minimum width=2.4cm, minimum height=0.8cm,
+                 align=center, font=\small},
+    arr/.style ={->, thick}
+  ]
+  % Components
+  \node[ext]  (CL) at (-4.5, 0) {UAM\\Clients};
+  \node[comp] (CI) at (-1.5, 0) {Communication\\Interface};
+  \node[comp] (RE) at ( 2.0, 0) {Resolver};
+  \node[comp] (FP) at ( 5.5, 0) {Flight Plan\\Store ($\mathcal{A}$)};
+  \node[comp] (CE) at ( 2.0,-2.3){Constraint\\Engine ($f_1$–$f_4$)};
+  % System boundary
+  \draw[dashed, rounded corners=8pt, gray!70, thick]
+    (-3.2,-3.2) rectangle (7.2,1.5);
+  \node[above right, font=\small\itshape, gray] at (-3.2,1.5)
+    {UAM Network Manager};
+  % Client <-> Communication Interface
+  \draw[arr] ([yshift= 3pt]CL.east)  --
+             node[above,font=\scriptsize]{request}
+             ([yshift= 3pt]CI.west);
+  \draw[arr] ([yshift=-3pt]CI.west)  --
+             node[below,font=\scriptsize]{result}
+             ([yshift=-3pt]CL.east);
+  % Communication Interface <-> Resolver
+  \draw[arr] ([yshift= 3pt]CI.east)  --
+             node[above,font=\scriptsize]{resolve$(r)$}
+             ([yshift= 3pt]RE.west);
+  \draw[arr] ([yshift=-3pt]RE.west)  --
+             node[below,font=\scriptsize]{result}
+             ([yshift=-3pt]CI.east);
+  % Resolver <-> Flight Plan Store
+  \draw[arr] ([yshift= 3pt]RE.east)  --
+             node[above,font=\scriptsize]{read}
+             ([yshift= 3pt]FP.west);
+  \draw[arr] ([yshift=-3pt]FP.west)  --
+             node[below,font=\scriptsize]{plans}
+             ([yshift=-3pt]RE.east);
+  % Resolver <-> Constraint Engine
+  \draw[arr] ([xshift= 3pt]RE.south) --
+             node[right,font=\scriptsize]{invoke $f_k$}
+             ([xshift= 3pt]CE.north);
+  \draw[arr] ([xshift=-3pt]CE.north) --
+             node[left, font=\scriptsize]{$d'$}
+             ([xshift=-3pt]RE.south);
+\end{tikzpicture}
+\end{center}
 
 % =============================================================================
 \section{Claims}
