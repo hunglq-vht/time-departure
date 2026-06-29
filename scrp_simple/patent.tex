@@ -482,7 +482,7 @@ cleared; no duration needs to fit between windows.
 \paragraph{C4 constraint function.}
 For each pad $p$ at vertiport $B$, compute the corresponding departure delay:
 \begin{equation}
-  d_p = \ttouch^*_p - \tland - \lane - \tto - t_{\mathrm{des}}.
+  d_p = t^*_{\mathrm{touch},p} - \tland - \lane - \tto - t_{\mathrm{des}}.
   \label{eq:c4}
 \end{equation}
 Select the pad $p^*$ minimising $d_p$, and set $f_4(d) = d_{p^*}$.
