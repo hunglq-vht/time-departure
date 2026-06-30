@@ -118,8 +118,6 @@ class MovementDemand:
     priority
         Scheduling priority (1 = highest).  Passed through to the conflict
         resolver so that high-priority demands take precedence in the airspace.
-    drone_type
-        Opaque identifier used in conflict resolution logging (e.g., 'A', 'B').
     """
 
     takeoff_vertiport_id: str
@@ -131,7 +129,6 @@ class MovementDemand:
     takeoff_mass_kg: float
     max_wait_time: float = 1800.0
     priority: int = 5
-    drone_type: str = ""
 
 
 @dataclass
@@ -240,7 +237,7 @@ def recommend_routes(
         )
         request = NewPlanRequest(
             flight_path=flight_path,
-            drone_type=demand.drone_type,
+            drone_type="",
             segment_speeds=segment_speeds,
             desired_start_time=demand.desired_departure_time,
             max_wait_time=demand.max_wait_time,

@@ -76,7 +76,6 @@ def _demand(
     mass: float = 5.0,
     max_wait: float = 3600.0,
     priority: int = 5,
-    drone_type: str = "A",
 ) -> MovementDemand:
     return MovementDemand(
         takeoff_vertiport_id=takeoff,
@@ -88,7 +87,6 @@ def _demand(
         takeoff_mass_kg=mass,
         max_wait_time=max_wait,
         priority=priority,
-        drone_type=drone_type,
     )
 
 
@@ -112,7 +110,7 @@ def _approved(
             landing_vertiport_id=landing,
             waypoints=waypoints,
         ),
-        drone_type="A",
+        drone_type="",
         segment_speeds=seg_speeds,
         start_time=start,
         t_takeoff=t_takeoff,
