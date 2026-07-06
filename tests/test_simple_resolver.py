@@ -573,8 +573,35 @@ class TestPadAvailability:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Combined constraints
+# Convergence trace
 # ──────────────────────────────────────────────────────────────────────────────
+
+class TestConvergenceTrace:
+
+    def test_trace_is_monotonic_and_matches_final_delay(self):
+        """When given a trace list, resolve() records one entry per constraint
+        pass, values never decrease, and the last entry equals the final delay.
+        """
+        vp = make_vports(pads_b=[("PB1", 120.0)])
+        approved = [approved_a_to_b("p1", 0.0)]
+        req = request_a_to_b(desired=0.0)
+        trace: list[dict] = []
+        result = ConflictResolver(vp, approved).resolve(req, trace=trace)
+
+        assert result.approved
+        assert len(trace) > 0
+        assert all(row["step"] in {"C1_lane", "C2_departure_airspace",
+                                    "C3_arrival_airspace", "C4_pad"} for row in trace)
+        delays = [row["delay"] for row in trace]
+        assert all(b >= a - 0.01 for a, b in zip(delays, delays[1:]))
+        assert trace[-1]["delay"] == pytest.approx(result.delay, abs=0.01)
+
+    def test_no_trace_by_default(self):
+        """Omitting trace leaves behaviour unchanged (no crash, no side effect)."""
+        vp = make_vports()
+        result = ConflictResolver(vp, []).resolve(request_a_to_b())
+        assert result.approved
+
 
 class TestCombined:
 

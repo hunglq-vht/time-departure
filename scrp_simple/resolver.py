@@ -106,34 +106,51 @@ class ConflictResolver:
     # Public API
     # ──────────────────────────────────────────────────────────────────────────
 
-    def resolve(self, request: NewPlanRequest) -> ResolveResult:
+    def resolve(
+        self,
+        request: NewPlanRequest,
+        trace: Optional[List[dict]] = None,
+    ) -> ResolveResult:
         """Return the minimum-delay approval (or rejection) for *request*.
 
         Iterates all four constraint passes until the required delay
         converges, then compares against ``max_wait_time``.
+
+        If *trace* is given (an empty list), it is filled in-place with one
+        record per constraint pass — ``{"iteration", "step", "delay"}`` — so
+        callers can inspect how the delay value climbs towards its fixed
+        point across C1→C2→C3→C4 rounds.
         """
         delay = 0.0
         assigned_pad_id: Optional[str] = None
         details: List[str] = []
 
-        for _ in range(self.MAX_ITER):
+        for it in range(self.MAX_ITER):
             prev = delay
 
             # C1: keep safe distance from other drones on shared lane segments
             delay, new_d = self._resolve_lane_conflicts(request, delay)
             details += [x for x in new_d if x not in details]
+            if trace is not None:
+                trace.append({"iteration": it + 1, "step": "C1_lane", "delay": delay})
 
             # C2: serialise takeoffs at the departure vertiport
             delay, new_d = self._resolve_vertiport_airspace(request, delay, "departure")
             details += [x for x in new_d if x not in details]
+            if trace is not None:
+                trace.append({"iteration": it + 1, "step": "C2_departure_airspace", "delay": delay})
 
             # C3: serialise landings (and prevent takeoff/landing overlap) at arrival
             delay, new_d = self._resolve_vertiport_airspace(request, delay, "arrival")
             details += [x for x in new_d if x not in details]
+            if trace is not None:
+                trace.append({"iteration": it + 1, "step": "C3_arrival_airspace", "delay": delay})
 
             # C4: assign a free pad and check occupation timeline
             delay, assigned_pad_id, new_d = self._resolve_pad_conflict(request, delay)
             details += [x for x in new_d if x not in details]
+            if trace is not None:
+                trace.append({"iteration": it + 1, "step": "C4_pad", "delay": delay})
 
             if abs(delay - prev) < 0.01:
                 break
